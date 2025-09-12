@@ -2,10 +2,6 @@
 Training application for IceNet model
 Handles data loading, training, validation, and model saving.
 Uses YAML configuration files for easy parameter management.
-
-(C) Copyright 2024 NOAA/NWS/NCEP/EMC
-This software is licensed under the terms of the Apache Licence Version 2.0
-which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 """
 
 import argparse
@@ -26,8 +22,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from typing import Tuple, Dict
 
-from icenet import create_icenet
-from data_preparation import IceDataPreparer, create_training_data_from_netcdf
+from .model import create_icenet
+from .data import IceDataPreparer, create_training_data_from_netcdf
 
 
 class IceNetTrainer:

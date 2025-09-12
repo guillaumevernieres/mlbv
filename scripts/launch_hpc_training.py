@@ -12,8 +12,6 @@ Usage:
 
   # Manual distributed
   MASTER_ADDR=node01 MASTER_PORT=29500 python launch_hpc_training.py --config config.yaml
-
-(C) Copyright 2024 NOAA/NWS/NCEP/EMC
 """
 
 import argparse
@@ -62,7 +60,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export CUDA_VISIBLE_DEVICES=$SLURM_LOCALID
 
 # Run distributed training
-srun python train_icenet.py --config {config_file} \\
+srun python ../scripts/train.py --config {config_file} \\
     --world-size $SLURM_NTASKS \\
     --local-rank $SLURM_LOCALID
 """
@@ -112,7 +110,7 @@ export OMP_NUM_THREADS={cpus_per_task}
 
 # Run distributed training using mpirun
 mpirun -np {total_gpus} -hostfile $PBS_NODEFILE \\
-    python train_icenet.py --config {config_file} \\
+    python ../scripts/train.py --config {config_file} \\
     --world-size {total_gpus}
 """
 
@@ -128,7 +126,10 @@ mpirun -np {total_gpus} -hostfile $PBS_NODEFILE \\
 def launch_single_node(config_file: str, gpus_per_node: int):
     """Launch single-node distributed training."""
     import torch.multiprocessing as mp
-    from train_icenet import train_distributed, load_config
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from icenet.training import train_distributed, load_config
 
     config = load_config(config_file)
 
@@ -145,7 +146,10 @@ def launch_single_node(config_file: str, gpus_per_node: int):
 
 def launch_manual_distributed(config_file: str):
     """Launch using manual environment variables."""
-    from train_icenet import main
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from icenet.training import main
 
     # Check required environment variables
     required_vars = ['MASTER_ADDR', 'MASTER_PORT', 'WORLD_SIZE', 'RANK']

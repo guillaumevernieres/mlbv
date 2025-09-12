@@ -22,6 +22,6 @@ mkdir -p checkpoints
 echo "Setup complete!"
 echo ""
 echo "To get started:"
-echo "  python train_icenet.py --config config.yaml --create-data"
+echo "  python scripts/train.py --config configs/config.yaml --create-data"
 echo ""
 echo "This will create sample training data and start training the model."
