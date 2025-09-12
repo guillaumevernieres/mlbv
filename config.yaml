@@ -1,0 +1,35 @@
+model:
+  input_size: 7  # tair, tsfc, sst, sss, hs, hi, sice
+  hidden_size: 16
+  output_size: 1  # aice (ice concentration)
+
+domain:
+  pole: "north"          # or "south"
+  clean_data: true       # Apply strict quality filters
+
+data:
+  data_path: "data/sample_data.npz"
+  validation_split: 0.2
+  num_workers: 0
+  num_samples: 10000
+
+training:
+  epochs: 100
+  batch_size: 64
+  optimizer:
+    type: "adam"
+    learning_rate: 0.001
+    weight_decay: 0.00001
+  scheduler:
+    type: "step"
+    step_size: 30
+    gamma: 0.5
+  loss_function: "mse"
+  early_stopping_patience: 15
+  log_interval: 50
+  save_interval: 20
+
+output:
+  model_dir: "models/"
+
+use_cuda: true

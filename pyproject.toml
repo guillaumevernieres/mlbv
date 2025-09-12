@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "icenet-training"
+version = "1.0.0"
+description = "PyTorch-based training system for IceNet sea ice prediction model"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "NOAA/NWS/NCEP/EMC", email = "your-email@noaa.gov"}
+]
+keywords = ["machine learning", "sea ice", "climate", "pytorch", "distributed training"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=1.12.0",
+    "numpy>=1.21.0",
+    "netCDF4>=1.5.8",
+    "pyyaml>=6.0",
+    "matplotlib>=3.5.0",
+    "pathlib2>=2.3.6; python_version<'3.4'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.10",
+    "flake8>=4.0",
+    "black>=22.0",
+    "mypy>=0.910",
+]
+hpc = [
+    "mpi4py>=3.1.0",
+    "psutil>=5.8.0",
+]
+viz = [
+    "seaborn>=0.11.0",
+    "plotly>=5.0.0",
+    "tensorboard>=2.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/icenet-training"
+Documentation = "https://icenet-training.readthedocs.io"
+Repository = "https://github.com/your-org/icenet-training.git"
+"Bug Tracker" = "https://github.com/your-org/icenet-training/issues"
+
+[project.scripts]
+icenet-train = "train_icenet:main"
+icenet-launch = "launch_hpc_training:main"
+icenet-test = "test_hpc_setup:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.black]
+line-length = 79
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --cov=. --cov-report=term-missing"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
