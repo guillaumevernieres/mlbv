@@ -7,7 +7,7 @@ You were absolutely right - we were missing the GitHub integration tests and CI/
 ### 🔧 **CI/CD Workflows**
 
 #### 1. **Main CI Pipeline** (`.github/workflows/ci.yml`)
-- **Multi-platform testing**: Ubuntu, macOS, Windows
+- **Linux testing**: Ubuntu across multiple Python versions
 - **Multi-Python version**: 3.8, 3.9, 3.10, 3.11
 - **Comprehensive checks**:
   - Linting with flake8
@@ -68,7 +68,7 @@ You were absolutely right - we were missing the GitHub integration tests and CI/
 
 #### **Automation Features:**
 - **Automatic testing** on every PR
-- **Multi-environment validation**
+- **Multi-Python version validation**
 - **Security vulnerability scanning**
 - **Package building and validation**
 - **Coverage reporting to Codecov**
@@ -78,7 +78,7 @@ You were absolutely right - we were missing the GitHub integration tests and CI/
 
 1. **🔄 Continuous Integration**
    - Every code change is automatically tested
-   - Multiple Python versions and platforms
+   - Multiple Python versions on Linux
    - Catches issues before they reach main branch
 
 2. **📊 Quality Metrics**
@@ -142,7 +142,7 @@ This repository now has:
 - ✅ Professional CI/CD pipeline
 - ✅ Comprehensive testing coverage
 - ✅ Security scanning and quality checks
-- ✅ Multi-platform compatibility
+- ✅ Linux compatibility testing
 - ✅ HPC environment validation
 - ✅ Automated releases
 - ✅ Contributor guidelines

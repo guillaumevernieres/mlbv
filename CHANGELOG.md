@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory-efficient data loading with multiple workers
 - Early stopping and learning rate scheduling
 - Robust error handling and logging
-- Cross-platform compatibility (Linux, macOS, Windows)
+- Linux compatibility across Python versions (3.8-3.11)
 
 ### Documentation
 - README with quick start guide
