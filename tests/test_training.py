@@ -4,6 +4,7 @@ Integration tests for training functionality
 
 import torch
 import yaml
+import numpy as np
 import tempfile
 from pathlib import Path
 
@@ -60,17 +61,11 @@ class TestTraining:
 
         # Save sample data
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(data_path,
+                 inputs=X.numpy(),
+                 targets=y.numpy(),
+                 input_mean=X.mean(dim=0).numpy(),
+                 input_std=X.std(dim=0).numpy())
 
         # Update config
         sample_config['data']['data_path'] = str(data_path)
@@ -90,17 +85,11 @@ class TestTraining:
 
         # Save sample data
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(data_path,
+                 inputs=X.numpy(),
+                 targets=y.numpy(),
+                 input_mean=X.mean(dim=0).numpy(),
+                 input_std=X.std(dim=0).numpy())
 
         # Configure for quick test
         sample_config['data']['data_path'] = str(data_path)
@@ -111,14 +100,15 @@ class TestTraining:
         train_loader, val_loader = trainer.load_data(str(data_path))
 
         # Get initial loss
-        initial_loss = trainer.validate(val_loader)
+        trainer.validate(val_loader)
 
         # Train for one epoch
         train_loss = trainer.train_epoch(train_loader)
 
         # Check that training ran
         assert train_loss > 0
-        assert len(trainer.history['train_loss']) == 0  # train() adds to history
+        # train() method adds to history, not train_epoch()
+        assert len(trainer.history['train_loss']) == 0
 
     def test_validation_step(self, sample_config, sample_data, temp_dir):
         """Test validation step."""
@@ -126,17 +116,11 @@ class TestTraining:
 
         # Save sample data
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(data_path,
+                 inputs=X.numpy(),
+                 targets=y.numpy(),
+                 input_mean=X.mean(dim=0).numpy(),
+                 input_std=X.std(dim=0).numpy())
 
         sample_config['data']['data_path'] = str(data_path)
 
@@ -154,17 +138,11 @@ class TestTraining:
 
         # Save sample data
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(data_path,
+                 inputs=X.numpy(),
+                 targets=y.numpy(),
+                 input_mean=X.mean(dim=0).numpy(),
+                 input_std=X.std(dim=0).numpy())
 
         sample_config['data']['data_path'] = str(data_path)
 
@@ -172,7 +150,7 @@ class TestTraining:
 
         # Save model
         model_path = temp_dir / "test_model.pth"
-        trainer.save_model(str(model_path))
+        trainer.save_checkpoint(str(model_path))
 
         assert model_path.exists()
 
@@ -199,8 +177,8 @@ class TestTraining:
         trainer = IceNetTrainer(sample_config)
         assert isinstance(trainer.scheduler, torch.optim.lr_scheduler.StepLR)
 
-        # Test ReduceLROnPlateau scheduler
-        sample_config['training']['scheduler']['type'] = 'plateau'
+        # Test CosineAnnealingLR scheduler
+        sample_config['training']['scheduler']['type'] = 'cosine'
         trainer = IceNetTrainer(sample_config)
-        scheduler_type = torch.optim.lr_scheduler.ReduceLROnPlateau
+        scheduler_type = torch.optim.lr_scheduler.CosineAnnealingLR
         assert isinstance(trainer.scheduler, scheduler_type)

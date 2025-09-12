@@ -37,16 +37,14 @@ class TestHPCSetup:
     def test_tensor_operations(self):
         """Test basic tensor operations."""
         # Create test tensors
-        x = torch.randn(10, 5)
-        y = torch.randn(5, 3)
+        x = torch.randn(10, 5, requires_grad=True)
+        y = torch.randn(5, 3, requires_grad=True)
 
         # Test operations
         z = torch.matmul(x, y)
         assert z.shape == (10, 3)
 
         # Test gradients
-        x.requires_grad_(True)
-        y.requires_grad_(True)
         loss = z.sum()
         loss.backward()
 

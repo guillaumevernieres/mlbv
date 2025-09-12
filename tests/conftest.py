@@ -43,10 +43,14 @@ def sample_config():
             'validation_split': 0.2,
             'num_workers': 0  # Disable multiprocessing for tests
         },
+        'output': {
+            'model_dir': 'test_models/'
+        },
         'distributed': {
             'backend': 'nccl'
         }
     }
+
 
 @pytest.fixture
 def sample_data():
@@ -59,9 +63,12 @@ def sample_data():
     X = torch.randn(n_samples, input_size)
 
     # Generate simple target (sum of inputs with some noise)
-    y = torch.sigmoid(X.sum(dim=1, keepdim=True) + 0.1 * torch.randn(n_samples, 1))
+    y_sum = X.sum(dim=1, keepdim=True)
+    noise = 0.1 * torch.randn(n_samples, 1)
+    y = torch.sigmoid(y_sum + noise)
 
     return X, y
+
 
 # Configure pytest
 def pytest_configure(config):
