@@ -56,8 +56,8 @@ class IceNetTrainer:
                 self.device = torch.device('cpu')
         else:
             self.device = torch.device(
-                'cuda' if (torch.cuda.is_available() and
-                           config.get('use_cuda', True))
+                'cuda' if (torch.cuda.is_available()
+                           and config.get('use_cuda', True))
                 else 'cpu'
             )
 
@@ -154,8 +154,7 @@ class IceNetTrainer:
                 self.optimizer,
                 mode='min',
                 factor=scheduler_config.get('factor', 0.5),
-                patience=scheduler_config.get('patience', 10),
-                verbose=True
+                patience=scheduler_config.get('patience', 10)
             )
         else:
             raise ValueError(
