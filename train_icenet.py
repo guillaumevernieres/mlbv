@@ -24,9 +24,10 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from pathlib import Path
 import matplotlib.pyplot as plt
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
+from typing import Any, List, Optional
 
-from icenet import create_icenet
+from icenet import create_icenet, IceNet
 from data_preparation import IceDataPreparer, create_training_data_from_netcdf
 
 
@@ -71,7 +72,7 @@ class IceNetTrainer:
                 print(f"Distributed training: {world_size} processes")
 
         # Initialize model
-        self.model = create_icenet(
+        self.model: Union[IceNet, DDP] = create_icenet(
             input_size=config['model']['input_size'],
             hidden_size=config['model']['hidden_size'],
             output_size=config['model']['output_size']
@@ -92,7 +93,7 @@ class IceNetTrainer:
         self.scheduler = self._create_scheduler()
 
         # Training history
-        self.history = {
+        self.history: Dict[str, List[float]] = {
             'train_loss': [],
             'val_loss': [],
             'learning_rate': []
@@ -131,7 +132,7 @@ class IceNetTrainer:
         else:
             raise ValueError(f"Unknown loss function: {loss_type}")
 
-    def _create_scheduler(self) -> optim.lr_scheduler._LRScheduler:
+    def _create_scheduler(self) -> Any:
         """Create learning rate scheduler."""
         scheduler_config = self.config['training'].get('scheduler', None)
 
@@ -198,8 +199,8 @@ class IceNetTrainer:
 
             # Use saved normalization stats if available
             if 'input_mean' in data and 'input_std' in data:
-                input_mean = torch.FloatTensor(data['input_mean'])
-                input_std = torch.FloatTensor(data['input_std'])
+                input_mean = torch.tensor(data['input_mean'], dtype=torch.float32)
+                input_std = torch.tensor(data['input_std'], dtype=torch.float32)
                 if self.rank == 0:
                     print("Using saved normalization statistics")
             else:
@@ -240,9 +241,11 @@ class IceNetTrainer:
 
         # Initialize model normalization
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            self.model.module.init_norm(input_mean, input_std)
+            assert hasattr(self.model.module, 'init_norm')
+            self.model.module.init_norm(input_mean, input_std)  # type: ignore
         else:
-            self.model.init_norm(input_mean, input_std)
+            assert hasattr(self.model, 'init_norm')
+            self.model.init_norm(input_mean, input_std)  # type: ignore
 
         # Create dataset
         dataset = TensorDataset(inputs, targets)
@@ -256,10 +259,10 @@ class IceNetTrainer:
 
         # Create distributed samplers if needed
         if self.is_distributed:
-            train_sampler = DistributedSampler(
+            train_sampler: Optional[DistributedSampler] = DistributedSampler(
                 train_dataset, num_replicas=self.world_size, rank=self.rank
             )
-            val_sampler = DistributedSampler(
+            val_sampler: Optional[DistributedSampler] = DistributedSampler(
                 val_dataset, num_replicas=self.world_size, rank=self.rank
             )
             shuffle = False
@@ -438,7 +441,13 @@ class IceNetTrainer:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         torch.save(checkpoint, output_dir / filename)
-        self.model.save_norm(str(output_dir / filename))
+        
+        # Save normalization stats
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            self.model.module.save_norm(str(output_dir / filename))  # type: ignore
+        else:
+            self.model.save_norm(str(output_dir / filename))  # type: ignore
+            
         print(f'Saved checkpoint: {output_dir / filename}')
 
     def plot_training_history(self) -> None:
@@ -583,10 +592,13 @@ def create_sample_data(config: Dict) -> str:
     return str(data_path)
 
 
-def load_config(config_path: str) -> Dict:
+def load_config(config_path: str) -> Dict[str, Any]:
     """Load configuration from YAML file."""
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        result = yaml.safe_load(f)
+        if not isinstance(result, dict):
+            raise ValueError(f"Configuration file {config_path} must contain a dictionary")
+        return result
 
 
 def create_default_config() -> Dict:
@@ -632,7 +644,7 @@ def create_default_config() -> Dict:
     }
 
 
-def setup_distributed(rank: int, world_size: int):
+def setup_distributed(rank: int, world_size: int) -> None:
     """Initialize distributed training for HPC environments."""
     # HPC systems often set these environment variables
     if 'SLURM_PROCID' in os.environ:
@@ -710,13 +722,13 @@ def setup_distributed(rank: int, world_size: int):
         raise
 
 
-def cleanup_distributed():
+def cleanup_distributed() -> None:
     """Clean up distributed training."""
     dist.destroy_process_group()
 
 
-def train_distributed(rank: int, world_size: int, config: Dict,
-                      data_path: str):
+def train_distributed(rank: int, world_size: int, config: Dict[str, Any],
+                      data_path: str) -> None:
     """
     Distributed training function.
 
@@ -749,7 +761,7 @@ def train_distributed(rank: int, world_size: int, config: Dict,
         cleanup_distributed()
 
 
-def main():
+def main() -> None:
     """Main training function."""
     parser = argparse.ArgumentParser(description='Train IceNet model')
     parser.add_argument('--config', type=str, default=None,

@@ -44,6 +44,10 @@ class IceNet(nn.Module):
         self.register_buffer('input_mean', torch.full((input_size,), 0.0))
         self.register_buffer('input_std', torch.full((input_size,), 1.0))
         
+        # Type annotations for buffers (for mypy)
+        self.input_mean: torch.Tensor
+        self.input_std: torch.Tensor
+        
         print("End IceNet constructor")
     
     def init_norm(self, mean: torch.Tensor, std: torch.Tensor) -> None:
@@ -138,6 +142,9 @@ class IceNet(nn.Module):
         # Compute gradients
         y.backward(torch.ones_like(y))
         
+        # Return gradients (ensure it's not None)
+        if x_input.grad is None:
+            raise RuntimeError("Gradients not computed properly")
         return x_input.grad
     
     def jac_norm(self, input_tensor: torch.Tensor) -> torch.Tensor:
