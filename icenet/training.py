@@ -19,7 +19,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from pathlib import Path
 import matplotlib.pyplot as plt
-from typing import Tuple, Dict, Union
+from typing import Tuple, Dict, Union, cast
 from typing import Any, List, Optional
 
 from .model import create_icenet, IceNet
@@ -247,11 +247,13 @@ class IceNetTrainer:
 
         # Initialize model normalization
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            assert hasattr(self.model.module, 'init_norm')
-            self.model.module.init_norm(input_mean, input_std)  # type: ignore
+            ddp_model = cast(DDP, self.model)
+            assert hasattr(ddp_model.module, 'init_norm')
+            ddp_model.module.init_norm(input_mean, input_std)
         else:
-            assert hasattr(self.model, 'init_norm')
-            self.model.init_norm(input_mean, input_std)  # type: ignore
+            icenet_model = cast(IceNet, self.model)
+            assert hasattr(icenet_model, 'init_norm')
+            icenet_model.init_norm(input_mean, input_std)
 
         # Create dataset
         dataset = TensorDataset(inputs, targets)
@@ -435,8 +437,14 @@ class IceNetTrainer:
         Args:
             filename: Checkpoint filename
         """
+        # Get model state dict handling DDP wrapping
+        if hasattr(self.model, 'module'):  # DDP wrapped
+            model_state = cast(DDP, self.model).module.state_dict()
+        else:
+            model_state = self.model.state_dict()
+
         checkpoint = {
-            'model_state_dict': self.model.state_dict(),
+            'model_state_dict': model_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'history': self.history,
@@ -451,9 +459,13 @@ class IceNetTrainer:
         # Save normalization stats
         if hasattr(self.model, 'module'):  # DDP wrapped model
             # Save normalization stats for distributed model
-            self.model.module.save_norm(str(output_dir / filename))
+            norm_path = str(output_dir / filename)
+            ddp_model = cast(DDP, self.model)
+            ddp_model.module.save_norm(norm_path)
         else:
-            self.model.save_norm(str(output_dir / filename))  # type: ignore
+            norm_path = str(output_dir / filename)
+            icenet_model = cast(IceNet, self.model)
+            icenet_model.save_norm(norm_path)
 
         print(f'Saved checkpoint: {output_dir / filename}')
 
@@ -466,16 +478,19 @@ class IceNetTrainer:
         """
         model_state = self.model.state_dict()
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            model_state = self.model.module.state_dict()
+            ddp_model = cast(DDP, self.model)
+            model_state = ddp_model.module.state_dict()
 
         torch.save(model_state, model_path)
 
         # Save normalization stats with same base name
         base_path = str(model_path).rsplit('.', 1)[0]
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            self.model.module.save_norm(base_path)  # type: ignore
+            ddp_model = cast(DDP, self.model)
+            ddp_model.module.save_norm(base_path)
         else:
-            self.model.save_norm(base_path)  # type: ignore
+            icenet_model = cast(IceNet, self.model)
+            icenet_model.save_norm(base_path)
 
         print(f'Saved model: {model_path}')
 
