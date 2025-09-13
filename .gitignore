@@ -16,6 +16,7 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -58,16 +59,33 @@ dmypy.json
 *.swo
 *~
 
+# Jupyter
+.ipynb_checkpoints/
+
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Project specific
-models/
-logs/
-data/
+# HPC job files
+*.out
+*.err
+slurm-*.out
+*.job
+*.batch
+
+# Project specific - PyTorch and training artifacts
 *.pt
 *.pth
 *.npz
 *.nc
+data/
+models/
+checkpoints/
+logs/
+outputs/
 results/
