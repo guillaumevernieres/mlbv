@@ -20,9 +20,10 @@ import sys
 import os
 import argparse
 from pathlib import Path
+from typing import Optional
 
 
-def run_single_process(config_file, create_data=False, data_path=None):
+def run_single_process(config_file: str, create_data: bool = False, data_path: Optional[str] = None) -> None:
     """Run single process training."""
     cmd = [sys.executable, "train_icenet.py", "--config", config_file]
 
@@ -35,7 +36,7 @@ def run_single_process(config_file, create_data=False, data_path=None):
     subprocess.run(cmd)
 
 
-def run_multi_gpu(config_file, num_gpus, create_data=False, data_path=None):
+def run_multi_gpu(config_file: str, num_gpus: int, create_data: bool = False, data_path: Optional[str] = None) -> None:
     """Run multi-GPU training on single node."""
     cmd = [
         sys.executable, "train_icenet.py",
@@ -53,7 +54,7 @@ def run_multi_gpu(config_file, num_gpus, create_data=False, data_path=None):
     subprocess.run(cmd)
 
 
-def run_distributed_slurm(config_file, create_data=False, data_path=None):
+def run_distributed_slurm(config_file: str, create_data: bool = False, data_path: Optional[str] = None) -> None:
     """Run with SLURM distributed setup."""
     # Get SLURM environment variables
     rank = int(os.environ.get('SLURM_PROCID', 0))
@@ -82,7 +83,7 @@ def run_distributed_slurm(config_file, create_data=False, data_path=None):
     subprocess.run(cmd)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description='Distributed training launcher for IceNet'
     )
