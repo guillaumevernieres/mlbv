@@ -22,18 +22,23 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyTorch
-*.pt
-*.pth
+# PyInstaller
+*.manifest
+*.spec
 
-# Training artifacts
-data/
-models/
-checkpoints/
-logs/
-outputs/
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
 
-# Environment
+# Environments
 .env
 .venv
 env/
@@ -41,6 +46,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # IDEs
 .vscode/
@@ -68,12 +78,14 @@ slurm-*.out
 *.job
 *.batch
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Type checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# Project specific - PyTorch and training artifacts
+*.pt
+*.pth
+*.npz
+*.nc
+data/
+models/
+checkpoints/
+logs/
+outputs/
+results/

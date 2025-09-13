@@ -20,7 +20,7 @@ import torch.distributed as dist
 from datetime import timedelta
 
 
-def setup_distributed_test():
+def setup_distributed_test() -> bool:
     """Test distributed setup."""
     print("=" * 60)
     print("HPC Distributed Training Setup Test")
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     if args.gpus > 1 and 'SLURM_PROCID' not in os.environ and 'RANK' not in os.environ:
         import torch.multiprocessing as mp
 
-        def test_process(rank, world_size):
+        def test_process(rank: int, world_size: int) -> None:
             os.environ['RANK'] = str(rank)
             os.environ['WORLD_SIZE'] = str(world_size)
             os.environ['LOCAL_RANK'] = str(rank)

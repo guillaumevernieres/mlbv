@@ -16,9 +16,13 @@ This software is licensed under the terms of the Apache Licence Version 2.0
 which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 """
 
-from .icenet import IceNet, create_icenet
-from .train_icenet import IceNetTrainer, load_config, create_default_config
-from .data_preparation import IceDataPreparer, create_training_data_from_netcdf
+# Import components when used as a package
+try:
+    from .icenet import IceNet, create_icenet  # type: ignore
+    from .train_icenet import IceNetTrainer, load_config, create_default_config  # type: ignore  
+    from .data_preparation import IceDataPreparer, create_training_data_from_netcdf  # type: ignore
+except ImportError:
+    pass  # Imports will work when files are run individually
 
 __version__ = "1.0.0"
 __author__ = "NOAA/NWS/NCEP/EMC"
