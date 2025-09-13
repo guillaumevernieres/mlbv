@@ -2,10 +2,6 @@
 Training application for IceNet model
 Handles data loading, training, validation, and model saving.
 Uses YAML configuration files for easy parameter management.
-
-(C) Copyright 2024 NOAA/NWS/NCEP/EMC
-This software is licensed under the terms of the Apache Licence Version 2.0
-which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 """
 
 import argparse
@@ -15,7 +11,6 @@ from datetime import timedelta
 import numpy as np
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import yaml
 import torch.nn as nn
 import torch.optim as optim
@@ -27,8 +22,8 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Dict, Union
 from typing import Any, List, Optional
 
-from icenet import create_icenet, IceNet
-from data_preparation import IceDataPreparer, create_training_data_from_netcdf
+from .model import create_icenet, IceNet
+from .data import create_training_data_from_netcdf
 
 
 class IceNetTrainer:
@@ -61,8 +56,8 @@ class IceNetTrainer:
                 self.device = torch.device('cpu')
         else:
             self.device = torch.device(
-                'cuda' if (torch.cuda.is_available() and
-                           config.get('use_cuda', True))
+                'cuda' if (torch.cuda.is_available()
+                           and config.get('use_cuda', True))
                 else 'cpu'
             )
 
@@ -154,6 +149,13 @@ class IceNetTrainer:
                 self.optimizer,
                 T_max=self.config['training']['epochs']
             )
+        elif scheduler_config['type'] == 'plateau':
+            return optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer,
+                mode='min',
+                factor=scheduler_config.get('factor', 0.5),
+                patience=scheduler_config.get('patience', 10)
+            )
         else:
             raise ValueError(
                 f"Unknown scheduler type: {scheduler_config['type']}"
@@ -199,8 +201,12 @@ class IceNetTrainer:
 
             # Use saved normalization stats if available
             if 'input_mean' in data and 'input_std' in data:
-                input_mean = torch.tensor(data['input_mean'], dtype=torch.float32)
-                input_std = torch.tensor(data['input_std'], dtype=torch.float32)
+                input_mean = torch.tensor(
+                    data['input_mean'], dtype=torch.float32
+                )
+                input_std = torch.tensor(
+                    data['input_std'], dtype=torch.float32
+                )
                 if self.rank == 0:
                     print("Using saved normalization statistics")
             else:
@@ -441,14 +447,37 @@ class IceNetTrainer:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         torch.save(checkpoint, output_dir / filename)
-        
+
         # Save normalization stats
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            self.model.module.save_norm(str(output_dir / filename))  # type: ignore
+            # Save normalization stats for distributed model
+            self.model.module.save_norm(str(output_dir / filename))
         else:
             self.model.save_norm(str(output_dir / filename))  # type: ignore
-            
+
         print(f'Saved checkpoint: {output_dir / filename}')
+
+    def save_model(self, model_path: str) -> None:
+        """
+        Save model state dict only (for testing compatibility).
+
+        Args:
+            model_path: Path to save the model
+        """
+        model_state = self.model.state_dict()
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            model_state = self.model.module.state_dict()
+
+        torch.save(model_state, model_path)
+
+        # Save normalization stats with same base name
+        base_path = str(model_path).rsplit('.', 1)[0]
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            self.model.module.save_norm(base_path)  # type: ignore
+        else:
+            self.model.save_norm(base_path)  # type: ignore
+
+        print(f'Saved model: {model_path}')
 
     def plot_training_history(self) -> None:
         """Plot training history."""
@@ -597,7 +626,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
     with open(config_path, 'r') as f:
         result = yaml.safe_load(f)
         if not isinstance(result, dict):
-            raise ValueError(f"Configuration file {config_path} must contain a dictionary")
+            raise ValueError(
+                f"Configuration file {config_path} must contain a dictionary"
+            )
         return result
 
 
@@ -823,7 +854,9 @@ def main() -> None:
     if world_size > 1:
         print(f"Starting distributed training: rank {rank}/{world_size}")
         # Don't use mp.spawn for HPC - processes are already spawned
-        train_distributed(rank, world_size, config, config['data']['data_path'])
+        train_distributed(
+            rank, world_size, config, config['data']['data_path']
+        )
     else:
         # Initialize trainer
         trainer = IceNetTrainer(config)

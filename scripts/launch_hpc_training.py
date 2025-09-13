@@ -5,15 +5,15 @@ Supports SLURM, PBS, and manual distributed setups
 
 Usage:
   # Single node, multiple GPUs
-  python launch_hpc_training.py --config config.yaml --nodes 1 --gpus-per-node 4
+  python launch_hpc_training.py --config config.yaml --nodes 1 \\
+    --gpus-per-node 4
 
   # Multi-node SLURM
   sbatch slurm_job.sh
 
   # Manual distributed
-  MASTER_ADDR=node01 MASTER_PORT=29500 python launch_hpc_training.py --config config.yaml
-
-(C) Copyright 2024 NOAA/NWS/NCEP/EMC
+  MASTER_ADDR=node01 MASTER_PORT=29500 \\
+    python launch_hpc_training.py --config config.yaml
 """
 
 import argparse
@@ -24,9 +24,15 @@ from pathlib import Path
 from typing import Optional
 
 
-def create_slurm_script(config_file: str, nodes: int, gpus_per_node: int,
-                       cpus_per_task: int, time_limit: str,
-                       partition: Optional[str] = None, account: Optional[str] = None) -> str:
+def create_slurm_script(
+        config_file: str,
+        nodes: int,
+        gpus_per_node: int,
+        cpus_per_task: int,
+        time_limit: str,
+        partition: Optional[str] = None,
+        account: Optional[str] = None
+) -> str:
     """Create SLURM batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -63,7 +69,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export CUDA_VISIBLE_DEVICES=$SLURM_LOCALID
 
 # Run distributed training
-srun python train_icenet.py --config {config_file} \\
+srun python ../scripts/train.py --config {config_file} \\
     --world-size $SLURM_NTASKS \\
     --local-rank $SLURM_LOCALID
 """
@@ -77,9 +83,14 @@ srun python train_icenet.py --config {config_file} \\
     return script_path
 
 
-def create_pbs_script(config_file: str, nodes: int, gpus_per_node: int,
-                     cpus_per_task: int, time_limit: str,
-                     queue: Optional[str] = None) -> str:
+def create_pbs_script(
+        config_file: str,
+        nodes: int,
+        gpus_per_node: int,
+        cpus_per_task: int,
+        time_limit: str,
+        queue: Optional[str] = None
+) -> str:
     """Create PBS batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -113,7 +124,7 @@ export OMP_NUM_THREADS={cpus_per_task}
 
 # Run distributed training using mpirun
 mpirun -np {total_gpus} -hostfile $PBS_NODEFILE \\
-    python train_icenet.py --config {config_file} \\
+    python ../scripts/train.py --config {config_file} \\
     --world-size {total_gpus}
 """
 
@@ -129,7 +140,10 @@ mpirun -np {total_gpus} -hostfile $PBS_NODEFILE \\
 def launch_single_node(config_file: str, gpus_per_node: int) -> None:
     """Launch single-node distributed training."""
     import torch.multiprocessing as mp
-    from train_icenet import train_distributed, load_config
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from icenet.training import train_distributed, load_config
 
     config = load_config(config_file)
 
@@ -146,7 +160,10 @@ def launch_single_node(config_file: str, gpus_per_node: int) -> None:
 
 def launch_manual_distributed(config_file: str) -> None:
     """Launch using manual environment variables."""
-    from train_icenet import main
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from icenet.training import main
 
     # Check required environment variables
     required_vars = ['MASTER_ADDR', 'MASTER_PORT', 'WORLD_SIZE', 'RANK']
@@ -220,8 +237,11 @@ def main() -> None:
 
         if args.submit:
             print("Submitting SLURM job...")
-            result = subprocess.run(['sbatch', script_path],
-                                  capture_output=True, text=True)
+            result = subprocess.run(
+                ['sbatch', script_path],
+                capture_output=True,
+                text=True
+            )
             print(result.stdout)
             if result.stderr:
                 print(result.stderr)
@@ -236,8 +256,11 @@ def main() -> None:
 
         if args.submit:
             print("Submitting PBS job...")
-            result = subprocess.run(['qsub', script_path],
-                                  capture_output=True, text=True)
+            result = subprocess.run(
+                ['qsub', script_path],
+                capture_output=True,
+                text=True
+            )
             print(result.stdout)
             if result.stderr:
                 print(result.stderr)

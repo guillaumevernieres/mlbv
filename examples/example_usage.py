@@ -25,8 +25,8 @@ def run_with_sample_data() -> None:
     print("=" * 60)
 
     cmd = [
-        sys.executable, "train_icenet.py",
-        "--config", "config.yaml",
+        sys.executable, "../scripts/train.py",
+        "--config", "../configs/config.yaml",
         "--create-data"
     ]
 
@@ -41,8 +41,8 @@ def run_with_netcdf(netcdf_file: str) -> None:
     print("=" * 60)
 
     cmd = [
-        sys.executable, "train_icenet.py",
-        "--config", "config.yaml",
+        sys.executable, "../scripts/train.py",
+        "--config", "../configs/config.yaml",
         "--netcdf-file", netcdf_file
     ]
 
@@ -56,17 +56,10 @@ def convert_netcdf_only(netcdf_file: str, output_file: str) -> None:
     print(f"Example 3: Converting {netcdf_file} to {output_file}")
     print("=" * 60)
 
-    cmd = [
-        sys.executable, "data_preparation.py",
-        netcdf_file,
-        output_file,
-        "--pole", "north",
-        "--clean-data",
-        "--max-patterns", "100000"
-    ]
-
-    print(f"Running: {' '.join(cmd)}")
-    subprocess.run(cmd)
+    # Note: For demonstration - would use icenet.data module directly
+    print("Would use: from icenet.data import create_training_data_from_netcdf")
+    print(f"create_training_data_from_netcdf('{netcdf_file}', config, '{output_file}')")
+    print("Conversion functionality is available through the icenet.data module")
 
 
 def main() -> None:
@@ -100,8 +93,8 @@ def main() -> None:
         print("=" * 60)
 
         cmd = [
-            sys.executable, "train_icenet.py",
-            "--config", "config.yaml",
+            sys.executable, "../scripts/train.py",
+            "--config", "../configs/config.yaml",
             "--data-path", args.data_file
         ]
 

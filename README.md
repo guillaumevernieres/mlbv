@@ -4,7 +4,31 @@ A comprehensive PyTorch-based training system for the IceNet neural network mode
 
 ## Overview
 
-This repository provides a complete Python implementation of the IceNet model training system, equivalent to the C++ MPI implementation but with modern PyTorch distributed training capabilities. The system supports single-node multi-GPU training, multi-node distributed training, and CPU-only training for HPC environments.
+This repository provi```bibtex
+@s```bibtex
+@software{icenet_python_training,
+  title={IceNet Python Training System},
+  year={2024},
+  url={https://github.com/your-org/icenet-python-training}
+}
+```
+
+## Support
+
+For questions and support:
+- Open an issue on GitHub
+- Documentation: See `docs/DISTRIBUTED_TRAINING.md` and `docs/HPC_DEPLOYMENT.md`python_training,
+  title={IceNet Python Training System},
+  year={2024},
+  url={https://github.com/your-org/icenet-python-training}
+}
+```
+
+## Support
+
+For questions and support:
+- Open an issue on GitHub
+- Documentation: See `docs/DISTRIBUTED_TRAINING.md` and `docs/HPC_DEPLOYMENT.md`Python implementation of the IceNet model training system, equivalent to the C++ MPI implementation but with modern PyTorch distributed training capabilities. The system supports single-node multi-GPU training, multi-node distributed training, and CPU-only training for HPC environments.
 
 ## Features
 
@@ -29,20 +53,20 @@ cd icenet-python-training
 pip install -r requirements.txt
 
 # Or use the setup script
-bash setup.sh
+bash scripts/setup.sh
 ```
 
 ### Basic Training
 
 ```bash
 # Create sample data and train
-python train_icenet.py --create-data --config config.yaml
+python scripts/train.py --create-data --config configs/config.yaml
 
 # Train with existing NetCDF data
-python train_icenet.py --netcdf-file data/ice_data.nc --config config.yaml
+python scripts/train.py --netcdf-file data/ice_data.nc --config configs/config.yaml
 
 # Train with custom configuration
-python train_icenet.py --config my_config.yaml --data-path data/processed_data.npz
+python scripts/train.py --config my_config.yaml --data-path data/processed_data.npz
 ```
 
 ### Distributed Training
@@ -50,14 +74,14 @@ python train_icenet.py --config my_config.yaml --data-path data/processed_data.n
 #### Single Node Multi-GPU
 ```bash
 # 4 GPUs on one node
-python launch_hpc_training.py --config config.yaml --gpus-per-node 4
+python scripts/launch_hpc_training.py --config configs/config.yaml --gpus-per-node 4
 ```
 
 #### HPC Cluster (SLURM)
 ```bash
 # Generate and submit SLURM job
-python launch_hpc_training.py \
-    --config config.yaml \
+python scripts/launch_hpc_training.py \
+    --config configs/config.yaml \
     --scheduler slurm \
     --nodes 4 \
     --gpus-per-node 2 \
@@ -105,20 +129,32 @@ data:
 ## File Structure
 
 ```
-icenet-python-training/
-├── icenet.py                    # Neural network model definition
-├── train_icenet.py             # Main training application
-├── data_preparation.py         # NetCDF data processing
-├── launch_hpc_training.py      # HPC launcher and job script generator
-├── distributed_train.py        # Distributed training utilities
-├── test_hpc_setup.py          # HPC setup testing
-├── config.yaml                # Default configuration
-├── requirements.txt           # Python dependencies
-├── setup.sh                  # Environment setup script
-├── README.md                 # This file
-├── DISTRIBUTED_TRAINING.md   # Distributed training guide
-├── HPC_DEPLOYMENT.md         # HPC deployment guide
-└── example_usage.py          # Usage examples
+icenet-training/
+├── icenet/                      # Main package
+│   ├── __init__.py             # Package initialization
+│   ├── model.py                # Neural network model definition
+│   ├── training.py             # Main training application
+│   ├── data.py                 # NetCDF data processing
+│   └── distributed.py         # Distributed training utilities
+├── scripts/                    # Executable scripts
+│   ├── train.py               # CLI training script
+│   ├── launch_hpc_training.py # HPC launcher and job script generator
+│   ├── setup.sh              # Environment setup script
+│   └── setup_repository.sh   # Repository initialization
+├── configs/                   # Configuration files
+│   └── config.yaml           # Default configuration
+├── tests/                     # Test modules
+│   └── test_hpc_setup.py     # HPC setup testing
+├── examples/                  # Usage examples
+│   └── example_usage.py      # Usage examples
+├── docs/                      # Documentation
+│   ├── DISTRIBUTED_TRAINING.md # Distributed training guide
+│   ├── HPC_DEPLOYMENT.md     # HPC deployment guide
+│   └── MIGRATION_GUIDE.md    # Migration guide
+├── requirements.txt          # Python dependencies
+├── pyproject.toml           # Project configuration
+├── CHANGELOG.md             # Version history
+└── README.md                # This file
 ```
 
 ## Data Format
@@ -162,10 +198,10 @@ The PyTorch distributed implementation provides identical results to the C++ MPI
 
 ### Training with Real Data
 ```python
-from train_icenet import IceNetTrainer, load_config
+from icenet.training import IceNetTrainer, load_config
 
 # Load configuration
-config = load_config('config.yaml')
+config = load_config('configs/config.yaml')
 
 # Initialize trainer
 trainer = IceNetTrainer(config)
@@ -177,7 +213,7 @@ trainer.train(train_loader, val_loader)
 
 ### Custom Model Configuration
 ```python
-from icenet import create_icenet
+from icenet.model import create_icenet
 
 # Create model with custom architecture
 model = create_icenet(
@@ -216,13 +252,13 @@ python test_hpc_setup.py
 
 ```bash
 # Test HPC setup
-python test_hpc_setup.py --gpus 2
+python tests/test_hpc_setup.py --gpus 2
 
 # Test with SLURM
-srun python test_hpc_setup.py
+srun python tests/test_hpc_setup.py
 
 # Validate training pipeline
-python train_icenet.py --create-data --config config.yaml
+python scripts/train.py --create-data --config configs/config.yaml
 ```
 
 ## Contributing
@@ -231,10 +267,6 @@ python train_icenet.py --create-data --config config.yaml
 2. Add tests for new features
 3. Update documentation
 4. Ensure HPC compatibility
-
-## License
-
-This software is licensed under the terms of the Apache Licence Version 2.0.
 
 ## Citation
 
