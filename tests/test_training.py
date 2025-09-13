@@ -4,8 +4,7 @@ Integration tests for training functionality
 
 import torch
 import yaml
-import tempfile
-from pathlib import Path
+import numpy as np
 
 from icenet.training import IceNetTrainer, load_config, create_default_config
 
@@ -54,23 +53,20 @@ class TestTraining:
         assert trainer.device is not None
         assert trainer.model is not None
 
-    def test_data_creation_and_loading(self, sample_config, sample_data, temp_dir):
+    def test_data_creation_and_loading(
+            self, sample_config, sample_data, temp_dir):
         """Test data creation and loading."""
         X, y = sample_data
 
-        # Save sample data
+        # Save sample data in numpy format
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(
+            data_path,
+            inputs=X.numpy(),
+            targets=y.numpy(),
+            input_mean=X.mean(dim=0).numpy(),
+            input_std=X.std(dim=0).numpy()
+        )
 
         # Update config
         sample_config['data']['data_path'] = str(data_path)
@@ -88,19 +84,15 @@ class TestTraining:
         """Test a single training step."""
         X, y = sample_data
 
-        # Save sample data
+        # Save sample data in numpy format
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(
+            data_path,
+            inputs=X.numpy(),
+            targets=y.numpy(),
+            input_mean=X.mean(dim=0).numpy(),
+            input_std=X.std(dim=0).numpy()
+        )
 
         # Configure for quick test
         sample_config['data']['data_path'] = str(data_path)
@@ -110,33 +102,27 @@ class TestTraining:
         trainer = IceNetTrainer(sample_config)
         train_loader, val_loader = trainer.load_data(str(data_path))
 
-        # Get initial loss
-        initial_loss = trainer.validate(val_loader)
-
         # Train for one epoch
         train_loss = trainer.train_epoch(train_loader)
 
         # Check that training ran
         assert train_loss > 0
-        assert len(trainer.history['train_loss']) == 0  # train() adds to history
+        # train() adds to history, train_epoch() doesn't
+        assert len(trainer.history['train_loss']) == 0
 
     def test_validation_step(self, sample_config, sample_data, temp_dir):
         """Test validation step."""
         X, y = sample_data
 
-        # Save sample data
+        # Save sample data in numpy format
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(
+            data_path,
+            inputs=X.numpy(),
+            targets=y.numpy(),
+            input_mean=X.mean(dim=0).numpy(),
+            input_std=X.std(dim=0).numpy()
+        )
 
         sample_config['data']['data_path'] = str(data_path)
 
@@ -152,19 +138,15 @@ class TestTraining:
         """Test model saving functionality."""
         X, y = sample_data
 
-        # Save sample data
+        # Save sample data in numpy format
         data_path = temp_dir / "test_data.npz"
-        torch.save({
-            'inputs': X,
-            'targets': y,
-            'input_mean': X.mean(dim=0),
-            'input_std': X.std(dim=0),
-            'metadata': {
-                'n_patterns': len(X),
-                'input_features': ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
-                'target': 'target'
-            }
-        }, data_path)
+        np.savez(
+            data_path,
+            inputs=X.numpy(),
+            targets=y.numpy(),
+            input_mean=X.mean(dim=0).numpy(),
+            input_std=X.std(dim=0).numpy()
+        )
 
         sample_config['data']['data_path'] = str(data_path)
 

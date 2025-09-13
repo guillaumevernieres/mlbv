@@ -153,6 +153,14 @@ class IceNetTrainer:
                 self.optimizer,
                 T_max=self.config['training']['epochs']
             )
+        elif scheduler_config['type'] == 'plateau':
+            return optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer,
+                mode='min',
+                factor=scheduler_config.get('factor', 0.5),
+                patience=scheduler_config.get('patience', 10),
+                verbose=True
+            )
         else:
             raise ValueError(
                 f"Unknown scheduler type: {scheduler_config['type']}"
@@ -440,14 +448,36 @@ class IceNetTrainer:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         torch.save(checkpoint, output_dir / filename)
-        
+
         # Save normalization stats
         if hasattr(self.model, 'module'):  # DDP wrapped model
             self.model.module.save_norm(str(output_dir / filename))  # type: ignore
         else:
             self.model.save_norm(str(output_dir / filename))  # type: ignore
-            
+
         print(f'Saved checkpoint: {output_dir / filename}')
+
+    def save_model(self, model_path: str) -> None:
+        """
+        Save model state dict only (for testing compatibility).
+
+        Args:
+            model_path: Path to save the model
+        """
+        model_state = self.model.state_dict()
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            model_state = self.model.module.state_dict()
+
+        torch.save(model_state, model_path)
+
+        # Save normalization stats with same base name
+        base_path = str(model_path).rsplit('.', 1)[0]
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            self.model.module.save_norm(base_path)  # type: ignore
+        else:
+            self.model.save_norm(base_path)  # type: ignore
+
+        print(f'Saved model: {model_path}')
 
     def plot_training_history(self) -> None:
         """Plot training history."""
