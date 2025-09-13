@@ -248,10 +248,10 @@ class IceNetTrainer:
         # Initialize model normalization
         if hasattr(self.model, 'module'):  # DDP wrapped model
             assert hasattr(self.model.module, 'init_norm')
-            self.model.module.init_norm(input_mean, input_std)  # type: ignore
+            self.model.module.init_norm(input_mean, input_std)
         else:
             assert hasattr(self.model, 'init_norm')
-            self.model.init_norm(input_mean, input_std)  # type: ignore
+            self.model.init_norm(input_mean, input_std)
 
         # Create dataset
         dataset = TensorDataset(inputs, targets)
@@ -451,9 +451,11 @@ class IceNetTrainer:
         # Save normalization stats
         if hasattr(self.model, 'module'):  # DDP wrapped model
             # Save normalization stats for distributed model
-            self.model.module.save_norm(str(output_dir / filename))
+            norm_path = str(output_dir / filename)
+            self.model.module.save_norm(norm_path)
         else:
-            self.model.save_norm(str(output_dir / filename))  # type: ignore
+            norm_path = str(output_dir / filename)
+            self.model.save_norm(norm_path)
 
         print(f'Saved checkpoint: {output_dir / filename}')
 
@@ -473,9 +475,9 @@ class IceNetTrainer:
         # Save normalization stats with same base name
         base_path = str(model_path).rsplit('.', 1)[0]
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            self.model.module.save_norm(base_path)  # type: ignore
+            self.model.module.save_norm(base_path)
         else:
-            self.model.save_norm(base_path)  # type: ignore
+            self.model.save_norm(base_path)
 
         print(f'Saved model: {model_path}')
 

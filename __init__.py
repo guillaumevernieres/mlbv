@@ -18,9 +18,13 @@ which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 
 # Import components when used as a package
 try:
-    from .icenet import IceNet, create_icenet  # type: ignore
-    from .train_icenet import IceNetTrainer, load_config, create_default_config  # type: ignore  
-    from .data_preparation import IceDataPreparer, create_training_data_from_netcdf  # type: ignore
+    from .icenet import IceNet, create_icenet
+    from .train_icenet import (
+        IceNetTrainer, load_config, create_default_config
+    )
+    from .data_preparation import (
+        IceDataPreparer, create_training_data_from_netcdf
+    )
 except ImportError:
     pass  # Imports will work when files are run individually
 
