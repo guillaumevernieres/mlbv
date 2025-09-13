@@ -1,44 +1,28 @@
 # IceNet Python Training
 
-A comprehensive PyTorch-based training system for the IceNet neural network model, designed for sea ice concentration prediction with distributed training capabilities across HPC clusters.
+[![CI/CD Pipeline](https://github.com/guillaumevernieres/mlbv/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/guillaumevernieres/mlbv/actions)
+[![codecov](https://codecov.io/gh/guillaumevernieres/mlbv/branch/main/graph/badge.svg)](https://codecov.io/gh/guillaumevernieres/mlbv)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
+A comprehensive PyTorch-based training system for the IceNet neural network model, designed for sea ice concentration prediction with distributed training capabilities across HPC clusters. This Python implementation abstracts the complexity of the original C++ version to enable rapid model development and experimentation.
 
 ## Overview
 
-This repository provi```bibtex
-@s```bibtex
-@software{icenet_python_training,
-  title={IceNet Python Training System},
-  year={2024},
-  url={https://github.com/your-org/icenet-python-training}
-}
-```
+This repository provides a Python implementation of the IceNet model training system, designed to abstract and accelerate model development compared to the original C++ implementation. While the original system successfully achieved distributed training across HPC clusters, model development and experimentation was cumbersome in C++. This Python version maintains the same distributed training capabilities while dramatically improving development speed and ease of use.
 
-## Support
-
-For questions and support:
-- Open an issue on GitHub
-- Documentation: See `docs/DISTRIBUTED_TRAINING.md` and `docs/HPC_DEPLOYMENT.md`python_training,
-  title={IceNet Python Training System},
-  year={2024},
-  url={https://github.com/your-org/icenet-python-training}
-}
-```
-
-## Support
-
-For questions and support:
-- Open an issue on GitHub
-- Documentation: See `docs/DISTRIBUTED_TRAINING.md` and `docs/HPC_DEPLOYMENT.md`Python implementation of the IceNet model training system, equivalent to the C++ MPI implementation but with modern PyTorch distributed training capabilities. The system supports single-node multi-GPU training, multi-node distributed training, and CPU-only training for HPC environments.
+**Original Implementation**: The initial work was developed in C++ using LibTorch in the [SOCA repository](https://github.com/JCSDA-internal/soca.git), where it successfully demonstrated distributed training across multiple HPC nodes. This Python version abstracts the complexity to enable rapid model iteration and development.
 
 ## Features
 
+- **Rapid Model Development**: Simplified Python interface for fast iteration and experimentation
 - **Neural Network Model**: 7-input feedforward network for sea ice prediction
-- **Distributed Training**: Multi-node, multi-GPU support with gradient averaging
+- **Distributed Training**: Multi-node, multi-GPU support with gradient averaging (inherited from C++ version)
 - **HPC Integration**: SLURM, PBS, and manual distributed setups
 - **Data Processing**: NetCDF data conversion and preprocessing
 - **Configuration Management**: YAML-based configuration system
 - **Checkpointing**: Model saving and resuming capabilities
 - **Visualization**: Training history plots and monitoring
+- **Development Speed**: Abstract away C++ complexity for faster model iteration
 
 ## Quick Start
 
@@ -174,10 +158,18 @@ The system automatically:
 ## Distributed Training
 
 ### Mathematical Equivalence
-The PyTorch distributed implementation provides identical results to the C++ MPI version:
+The PyTorch distributed implementation provides identical results to the original C++ MPI version from the [SOCA repository](https://github.com/JCSDA-internal/soca.git), which successfully demonstrated distributed training across multiple HPC nodes:
 - Automatic gradient averaging via `DistributedDataParallel`
 - Synchronized statistics computation with `all_reduce` operations
 - Identical numerical precision and convergence
+- Same neural network architecture and training algorithms
+
+### Development Speed Improvements
+This Python implementation dramatically reduces development complexity compared to the C++ version:
+- **Rapid prototyping**: Easy model architecture changes and experimentation
+- **Interactive development**: Jupyter notebook support and REPL debugging
+- **Modern tooling**: PyTorch ecosystem, automatic differentiation, and rich visualization
+- **Simplified deployment**: Eliminate C++ compilation and dependency management
 
 ### HPC Support
 - **SLURM**: Automatic environment detection and job script generation
@@ -277,9 +269,12 @@ If you use this software in your research, please cite:
   title={IceNet Python Training System},
   author={NOAA/NWS/NCEP/EMC},
   year={2024},
-  url={https://github.com/your-org/icenet-python-training}
+  url={https://github.com/your-org/icenet-python-training},
+  note={Python implementation based on original C++ LibTorch version in SOCA}
 }
 ```
+
+**Original C++ Implementation**: The foundational work was developed in C++ using LibTorch in the [SOCA (Sea-ice Ocean Coupled Assimilation)](https://github.com/JCSDA-internal/soca.git) repository, where it successfully achieved distributed training across multiple HPC nodes. However, model development and experimentation was cumbersome in C++, motivating this Python abstraction for faster iteration.
 
 ## Support
 
