@@ -2,7 +2,6 @@
 Tests for data preparation functionality
 """
 
-import torch
 import numpy as np
 
 from icenet.data import IceDataPreparer

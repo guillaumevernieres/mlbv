@@ -2,10 +2,7 @@
 Unit tests for IceNet model functionality
 """
 
-import pytest
 import torch
-import tempfile
-from pathlib import Path
 
 from icenet.model import IceNet, create_icenet
 
@@ -37,7 +34,8 @@ class TestIceNetModel:
         output = model(X[:10])  # Test with first 10 samples
 
         assert output.shape == (10, 1)
-        assert torch.all(output >= 0) and torch.all(output <= 1)  # sigmoid output
+        # Check sigmoid output is in valid range
+        assert torch.all(output >= 0) and torch.all(output <= 1)
 
     def test_normalization(self):
         """Test input normalization functionality."""

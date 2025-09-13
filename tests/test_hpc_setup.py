@@ -67,12 +67,12 @@ def setup_distributed_test() -> bool:
         os.environ['MASTER_ADDR'] = 'localhost'
         os.environ['MASTER_PORT'] = '29500'
 
-    print(f"\nEnvironment variables:")
+    print("\nEnvironment variables:")
     print(f"  MASTER_ADDR: {os.environ.get('MASTER_ADDR', 'not set')}")
     print(f"  MASTER_PORT: {os.environ.get('MASTER_PORT', 'not set')}")
 
     # Test CUDA availability
-    print(f"\nCUDA information:")
+    print("\nCUDA information:")
     print(f"  Available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"  Device count: {torch.cuda.device_count()}")
@@ -81,11 +81,11 @@ def setup_distributed_test() -> bool:
         print(f"  Assigned device: {device}")
     else:
         device = torch.device('cpu')
-        print(f"  Using CPU")
+        print("  Using CPU")
 
     # Test distributed initialization if multi-process
     if world_size > 1:
-        print(f"\nInitializing distributed training...")
+        print("\nInitializing distributed training...")
         backend = "nccl" if torch.cuda.is_available() else "gloo"
         print(f"  Backend: {backend}")
 
@@ -96,11 +96,11 @@ def setup_distributed_test() -> bool:
                 world_size=world_size,
                 timeout=timedelta(minutes=5)
             )
-            print(f"  ✓ Initialization successful")
+            print("  ✓ Initialization successful")
 
             # Test communication
             if rank == 0:
-                print(f"  Testing all-reduce operation...")
+                print("  Testing all-reduce operation...")
 
             test_tensor = torch.tensor([rank + 1.0], device=device)
             print(f"  Rank {rank}: Initial tensor = {test_tensor.item()}")
@@ -111,23 +111,23 @@ def setup_distributed_test() -> bool:
             print(f"  Rank {rank}: After all-reduce = {test_tensor.item()}")
 
             if abs(test_tensor.item() - expected_sum) < 1e-6:
-                print(f"  ✓ All-reduce test passed")
+                print("  ✓ All-reduce test passed")
             else:
                 print(f"  ✗ All-reduce test failed: "
                       f"expected {expected_sum}, got {test_tensor.item()}")
 
             # Cleanup
             dist.destroy_process_group()
-            print(f"  ✓ Process group destroyed")
+            print("  ✓ Process group destroyed")
 
         except Exception as e:
             print(f"  ✗ Initialization failed: {e}")
             return False
 
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print(f"Test completed successfully for rank {rank}/{world_size}")
-    print(f"Ready for distributed IceNet training!")
-    print(f"=" * 60)
+    print("Ready for distributed IceNet training!")
+    print("=" * 60)
 
     return True
 
@@ -141,7 +141,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # For single-node testing with multiple processes
-    if args.gpus > 1 and 'SLURM_PROCID' not in os.environ and 'RANK' not in os.environ:
+    if (args.gpus > 1 and 'SLURM_PROCID' not in os.environ and
+            'RANK' not in os.environ):
         import torch.multiprocessing as mp
 
         def test_process(rank: int, world_size: int) -> None:

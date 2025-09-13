@@ -23,7 +23,11 @@ from pathlib import Path
 from typing import Optional
 
 
-def run_single_process(config_file: str, create_data: bool = False, data_path: Optional[str] = None) -> None:
+def run_single_process(
+        config_file: str,
+        create_data: bool = False,
+        data_path: Optional[str] = None
+) -> None:
     """Run single process training."""
     cmd = [sys.executable, "train_icenet.py", "--config", config_file]
 
@@ -36,8 +40,13 @@ def run_single_process(config_file: str, create_data: bool = False, data_path: O
     subprocess.run(cmd)
 
 
-def run_multi_gpu(config_file: str, num_gpus: int, create_data: bool = False, data_path: Optional[str] = None) -> None:
-    """Run multi-GPU training on single node."""
+def run_multi_gpu(
+        config_file: str,
+        num_gpus: int,
+        create_data: bool = False,
+        data_path: Optional[str] = None
+) -> None:
+    """Run multi-GPU training using multiprocessing."""
     cmd = [
         sys.executable, "train_icenet.py",
         "--config", config_file,
@@ -54,8 +63,12 @@ def run_multi_gpu(config_file: str, num_gpus: int, create_data: bool = False, da
     subprocess.run(cmd)
 
 
-def run_distributed_slurm(config_file: str, create_data: bool = False, data_path: Optional[str] = None) -> None:
-    """Run with SLURM distributed setup."""
+def run_distributed_slurm(
+        config_file: str,
+        create_data: bool = False,
+        data_path: Optional[str] = None
+) -> None:
+    """Run distributed training using SLURM."""
     # Get SLURM environment variables
     rank = int(os.environ.get('SLURM_PROCID', 0))
     world_size = int(os.environ.get('SLURM_NPROCS', 1))

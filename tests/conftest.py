@@ -9,11 +9,14 @@ import os
 from pathlib import Path
 
 # Set up test fixtures
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
 
 @pytest.fixture
 def sample_config():
@@ -48,6 +51,7 @@ def sample_config():
         }
     }
 
+
 @pytest.fixture
 def sample_data():
     """Generate sample training data."""
@@ -59,9 +63,12 @@ def sample_data():
     X = torch.randn(n_samples, input_size)
 
     # Generate simple target (sum of inputs with some noise)
-    y = torch.sigmoid(X.sum(dim=1, keepdim=True) + 0.1 * torch.randn(n_samples, 1))
+    y = torch.sigmoid(
+        X.sum(dim=1, keepdim=True) + 0.1 * torch.randn(n_samples, 1)
+    )
 
     return X, y
+
 
 # Configure pytest
 def pytest_configure(config):

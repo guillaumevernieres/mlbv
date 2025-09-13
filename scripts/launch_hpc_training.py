@@ -5,13 +5,15 @@ Supports SLURM, PBS, and manual distributed setups
 
 Usage:
   # Single node, multiple GPUs
-  python launch_hpc_training.py --config config.yaml --nodes 1 --gpus-per-node 4
+  python launch_hpc_training.py --config config.yaml --nodes 1 \\
+    --gpus-per-node 4
 
   # Multi-node SLURM
   sbatch slurm_job.sh
 
   # Manual distributed
-  MASTER_ADDR=node01 MASTER_PORT=29500 python launch_hpc_training.py --config config.yaml
+  MASTER_ADDR=node01 MASTER_PORT=29500 \\
+    python launch_hpc_training.py --config config.yaml
 """
 
 import argparse
@@ -22,9 +24,15 @@ from pathlib import Path
 from typing import Optional
 
 
-def create_slurm_script(config_file: str, nodes: int, gpus_per_node: int,
-                       cpus_per_task: int, time_limit: str,
-                       partition: Optional[str] = None, account: Optional[str] = None) -> str:
+def create_slurm_script(
+        config_file: str,
+        nodes: int,
+        gpus_per_node: int,
+        cpus_per_task: int,
+        time_limit: str,
+        partition: Optional[str] = None,
+        account: Optional[str] = None
+) -> str:
     """Create SLURM batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -75,9 +83,14 @@ srun python ../scripts/train.py --config {config_file} \\
     return script_path
 
 
-def create_pbs_script(config_file: str, nodes: int, gpus_per_node: int,
-                     cpus_per_task: int, time_limit: str,
-                     queue: Optional[str] = None) -> str:
+def create_pbs_script(
+        config_file: str,
+        nodes: int,
+        gpus_per_node: int,
+        cpus_per_task: int,
+        time_limit: str,
+        queue: Optional[str] = None
+) -> str:
     """Create PBS batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -224,8 +237,11 @@ def main() -> None:
 
         if args.submit:
             print("Submitting SLURM job...")
-            result = subprocess.run(['sbatch', script_path],
-                                  capture_output=True, text=True)
+            result = subprocess.run(
+                ['sbatch', script_path],
+                capture_output=True,
+                text=True
+            )
             print(result.stdout)
             if result.stderr:
                 print(result.stderr)
@@ -240,8 +256,11 @@ def main() -> None:
 
         if args.submit:
             print("Submitting PBS job...")
-            result = subprocess.run(['qsub', script_path],
-                                  capture_output=True, text=True)
+            result = subprocess.run(
+                ['qsub', script_path],
+                capture_output=True,
+                text=True
+            )
             print(result.stdout)
             if result.stderr:
                 print(result.stderr)

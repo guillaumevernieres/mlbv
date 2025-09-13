@@ -11,7 +11,6 @@ from datetime import timedelta
 import numpy as np
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import yaml
 import torch.nn as nn
 import torch.optim as optim
@@ -23,11 +22,8 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Dict, Union
 from typing import Any, List, Optional
 
-from .model import create_icenet
-from .data import IceDataPreparer, create_training_data_from_netcdf
-
-#from icenet import create_icenet, IceNet
-#from data_preparation import IceDataPreparer, create_training_data_from_netcdf
+from .model import create_icenet, IceNet
+from .data import create_training_data_from_netcdf
 
 
 class IceNetTrainer:
@@ -206,8 +202,12 @@ class IceNetTrainer:
 
             # Use saved normalization stats if available
             if 'input_mean' in data and 'input_std' in data:
-                input_mean = torch.tensor(data['input_mean'], dtype=torch.float32)
-                input_std = torch.tensor(data['input_std'], dtype=torch.float32)
+                input_mean = torch.tensor(
+                    data['input_mean'], dtype=torch.float32
+                )
+                input_std = torch.tensor(
+                    data['input_std'], dtype=torch.float32
+                )
                 if self.rank == 0:
                     print("Using saved normalization statistics")
             else:
@@ -451,7 +451,8 @@ class IceNetTrainer:
 
         # Save normalization stats
         if hasattr(self.model, 'module'):  # DDP wrapped model
-            self.model.module.save_norm(str(output_dir / filename))  # type: ignore
+            # Save normalization stats for distributed model
+            self.model.module.save_norm(str(output_dir / filename))
         else:
             self.model.save_norm(str(output_dir / filename))  # type: ignore
 
@@ -626,7 +627,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
     with open(config_path, 'r') as f:
         result = yaml.safe_load(f)
         if not isinstance(result, dict):
-            raise ValueError(f"Configuration file {config_path} must contain a dictionary")
+            raise ValueError(
+                f"Configuration file {config_path} must contain a dictionary"
+            )
         return result
 
 
@@ -852,7 +855,9 @@ def main() -> None:
     if world_size > 1:
         print(f"Starting distributed training: rank {rank}/{world_size}")
         # Don't use mp.spawn for HPC - processes are already spawned
-        train_distributed(rank, world_size, config, config['data']['data_path'])
+        train_distributed(
+            rank, world_size, config, config['data']['data_path']
+        )
     else:
         # Initialize trainer
         trainer = IceNetTrainer(config)
