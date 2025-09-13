@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 
-def run_with_sample_data():
+def run_with_sample_data() -> None:
     """Example: Create synthetic data and train."""
     print("=" * 60)
     print("Example 1: Training with synthetic data")
@@ -34,7 +34,7 @@ def run_with_sample_data():
     subprocess.run(cmd)
 
 
-def run_with_netcdf(netcdf_file):
+def run_with_netcdf(netcdf_file: str) -> None:
     """Example: Train with NetCDF data."""
     print("=" * 60)
     print(f"Example 2: Training with NetCDF data from {netcdf_file}")
@@ -50,7 +50,7 @@ def run_with_netcdf(netcdf_file):
     subprocess.run(cmd)
 
 
-def convert_netcdf_only(netcdf_file, output_file):
+def convert_netcdf_only(netcdf_file: str, output_file: str) -> None:
     """Example: Convert NetCDF to training format without training."""
     print("=" * 60)
     print(f"Example 3: Converting {netcdf_file} to {output_file}")
@@ -62,7 +62,7 @@ def convert_netcdf_only(netcdf_file, output_file):
     print("Conversion functionality is available through the icenet.data module")
 
 
-def main():
+def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description='IceNet training examples')

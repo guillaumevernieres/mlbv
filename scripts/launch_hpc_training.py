@@ -19,11 +19,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def create_slurm_script(config_file: str, nodes: int, gpus_per_node: int,
                        cpus_per_task: int, time_limit: str,
-                       partition: str = None, account: str = None) -> str:
+                       partition: Optional[str] = None, account: Optional[str] = None) -> str:
     """Create SLURM batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -76,7 +77,7 @@ srun python ../scripts/train.py --config {config_file} \\
 
 def create_pbs_script(config_file: str, nodes: int, gpus_per_node: int,
                      cpus_per_task: int, time_limit: str,
-                     queue: str = None) -> str:
+                     queue: Optional[str] = None) -> str:
     """Create PBS batch script for distributed training."""
 
     total_gpus = nodes * gpus_per_node
@@ -123,7 +124,7 @@ mpirun -np {total_gpus} -hostfile $PBS_NODEFILE \\
     return script_path
 
 
-def launch_single_node(config_file: str, gpus_per_node: int):
+def launch_single_node(config_file: str, gpus_per_node: int) -> None:
     """Launch single-node distributed training."""
     import torch.multiprocessing as mp
     import sys
@@ -144,7 +145,7 @@ def launch_single_node(config_file: str, gpus_per_node: int):
     )
 
 
-def launch_manual_distributed(config_file: str):
+def launch_manual_distributed(config_file: str) -> None:
     """Launch using manual environment variables."""
     import sys
     from pathlib import Path
@@ -180,7 +181,7 @@ def launch_manual_distributed(config_file: str):
     main()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description='Launch distributed IceNet training on HPC systems'
     )

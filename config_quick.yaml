@@ -1,0 +1,30 @@
+data:
+  data_path: data/sample_data.npz
+  num_samples: 1000
+  num_workers: 0
+  validation_split: 0.2
+domain:
+  clean_data: true
+  pole: north
+model:
+  hidden_size: 16
+  input_size: 7
+  output_size: 1
+output:
+  model_dir: models/
+training:
+  batch_size: 64
+  early_stopping_patience: 15
+  epochs: 5
+  log_interval: 50
+  loss_function: mse
+  optimizer:
+    learning_rate: 0.001
+    type: adam
+    weight_decay: 1.0e-05
+  save_interval: 20
+  scheduler:
+    gamma: 0.5
+    step_size: 30
+    type: step
+use_cuda: true

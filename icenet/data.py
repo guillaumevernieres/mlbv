@@ -120,7 +120,7 @@ class IceDataPreparer:
         selected_indices = []
 
         for i in range(n_points):
-            if select_data(data['mask'][i], data['lat'][i], data['aice'][i],
+            if select_data(float(data['mask'][i]), float(data['lat'][i]), float(data['aice'][i]),
                            self.clean_data, self.pole):
                 selected_indices.append(i)
                 if len(selected_indices) >= max_patterns:
