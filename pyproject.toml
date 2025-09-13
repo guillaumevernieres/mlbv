@@ -34,6 +34,7 @@ dev = [
     "flake8>=4.0",
     "black>=22.0",
     "mypy>=0.910",
+    "types-PyYAML>=6.0.0",
     "bandit>=1.7.0",
     "safety>=1.10.0",
 ]
@@ -52,6 +53,7 @@ all = [
     "flake8>=4.0",
     "black>=22.0",
     "mypy>=0.910",
+    "types-PyYAML>=6.0.0",
     "bandit>=1.7.0",
     "safety>=1.10.0",
     "mpi4py>=3.1.0",
