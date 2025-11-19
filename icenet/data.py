@@ -10,8 +10,8 @@ from typing import Tuple, Dict, Optional
 from pathlib import Path
 
 
-def select_data(mask: float, lat: float, aice: float,
-                clean_data: bool, pole: str) -> bool:
+def select_data(mask: float, lat: float, aice: float, sst: float,
+                clean_data: bool, pole: str, min_ice: float = 0.0) -> bool:
     """
     Check if data point should be included based on domain criteria.
 
@@ -19,12 +19,22 @@ def select_data(mask: float, lat: float, aice: float,
         mask: Ocean mask value (1=ocean, 0=land)
         lat: Latitude in degrees
         aice: Sea ice concentration (0-1)
+        sst: Sea surface temperature in Celsius
         clean_data: If True, apply strict quality filters
-        pole: Domain pole ("north" or "south")
+        pole: Domain pole ("north", "south", or "both")
+        min_ice: Minimum ice concentration threshold (default: 0.0)
 
     Returns:
         True if data point should be included
     """
+    # Always filter out warm water (SST > 5°C)
+    if sst > 5.0:
+        return False
+
+    # Apply minimum ice concentration filter
+    if aice < min_ice:
+        return False
+
     if pole == "north":
         if clean_data:
             return (mask == 1 and lat > 40.0 and
@@ -37,8 +47,15 @@ def select_data(mask: float, lat: float, aice: float,
                     aice > 0.0 and aice <= 1.0)
         else:
             return lat < -60.0
+    elif pole == "both":
+        if clean_data:
+            return (mask == 1 and (lat > 40.0 or lat < -40.0) and
+                    aice >= 0.0 and aice <= 1.0)
+        else:
+            return lat > 60.0 or lat < -60.0
     else:
-        raise ValueError(f"Invalid pole value: {pole}")
+        raise ValueError(f"Invalid pole value: {pole}. "
+                         f"Use 'north', 'south', or 'both'.")
 
 
 class IceDataPreparer:
@@ -57,8 +74,41 @@ class IceDataPreparer:
         self.config = config
         self.pole = config.get('domain', {}).get('pole', 'north')
         self.clean_data = config.get('domain', {}).get('clean_data', True)
+        self.min_ice = config.get('domain', {}).get('min_ice_concentration', 0.0)
+        # Add synthetic data option for testing
+        self.use_synthetic = config.get('domain', {}).get('use_synthetic_data', False)
 
-        # Variable names mapping from C++ code
+        # Get input size from model config
+        self.input_size = config.get('model', {}).get('input_size', 1)
+
+        # Define available input features in order of preference
+        self.available_features = [
+            'sst',    # Sea surface temperature
+            'sss',    # Sea surface salinity
+            'tair',   # Air temperature
+            'tsfc',   # Surface temperature
+            'hi',     # Ice thickness
+            'hs',     # Snow thickness
+            'sice',   # Ice salinity
+            # Stress variables (ice temp vars removed due to NaN issues)
+            'strocnx',    # Ocean/ice stress (x)
+            'strocny',    # Ocean/ice stress (y)
+            'strairx',    # Atm/ice stress (x)
+            'strairy',    # Atm/ice stress (y)
+            # Heat flux variables
+            'fhocn',      # Heat flux ice to ocean
+            'qref',       # 2m reference specific humidity
+            'fsens',      # Sensible heat flux
+            'flat',       # Latent heat flux
+            'flwdn',      # Down longwave flux
+            'fswdn',      # Down solar flux
+        ]
+
+        # Select features based on input_size
+        self.selected_features = self.available_features[:self.input_size]
+        print(f"Using {self.input_size} input features: {self.selected_features}")
+
+        # Variable names mapping from C++ code with alternatives
         self.var_names = {
             'lat': 'ULAT',
             'lon': 'ULON',
@@ -70,7 +120,41 @@ class IceDataPreparer:
             'hi': 'hi_h',
             'hs': 'hs_h',
             'mask': 'umask',
-            'tair': 'Tair_h'
+            'tair': 'Tair_h',
+            'frzmlt': 'frzmlt_h',
+            # Ice temperature variables
+            'sitempbot': 'sitempbot_h',
+            'sitempsnic': 'sitempsnic_h',
+            'sitemptop': 'sitemptop_h',
+            # Stress variables
+            'strocnx': 'strocnx_h',
+            'strocny': 'strocny_h',
+            'strairx': 'strairx_h',
+            'strairy': 'strairy_h',
+            # Heat flux variables
+            'fhocn': 'fhocn_h',
+            'qref': 'Qref_h',
+            'flwup': 'flwup_h',
+            'fsens': 'fsens_h',
+            'flat': 'flat_h',
+            'flwdn': 'flwdn_h',
+            'fswdn': 'fswdn_h'
+        }
+
+        # Alternative variable name mappings for different file formats
+        self.alt_var_names = {
+            'aice_h': ['aicen', 'aice', 'ice_concentration'],
+            'hi_h': ['hicen', 'hi', 'ice_thickness'],
+            'hs_h': ['hsnon', 'hs', 'snow_thickness'],
+            'ULAT': ['lat', 'latitude', 'TLAT'],
+            'ULON': ['lon', 'longitude', 'TLON'],
+            'umask': ['mask', 'land_mask', 'ocean_mask'],
+            'Tair_h': ['tair', 'air_temperature'],
+            'Tsfc_h': ['tsfc', 'surface_temperature'],
+            'sst_h': ['sst', 'sea_surface_temperature'],
+            'sss_h': ['sss', 'sea_surface_salinity'],
+            'sice_h': ['sice', 'ice_salinity'],
+            'frzmlt_h': ['frzmlt', 'frazil_melt', 'frazil_ice_melt']
         }
 
     def read_netcdf_data(self, filename: str) -> Dict[str, np.ndarray]:
@@ -88,14 +172,33 @@ class IceDataPreparer:
         with nc.Dataset(filename, 'r') as dataset:
             data = {}
 
-            # Read all variables
+            # Read all variables with fallback to alternative names
             for key, var_name in self.var_names.items():
+                found_var = None
+
+                # First try the primary variable name
                 if var_name in dataset.variables:
-                    data[key] = dataset.variables[var_name][:].flatten()
-                    print(f"Read {key} ({var_name}): shape {data[key].shape}")
+                    found_var = var_name
                 else:
+                    # Try alternative names
+                    alt_names = self.alt_var_names.get(var_name, [])
+                    for alt_name in alt_names:
+                        if alt_name in dataset.variables:
+                            found_var = alt_name
+                            print(f"Alternative: {var_name} -> {alt_name}")
+                            break
+
+                if found_var:
+                    data[key] = dataset.variables[found_var][:].flatten()
+                    print(f"Read {key} ({found_var}): shape {data[key].shape}")
+                else:
+                    available_vars = ', '.join(
+                        sorted(dataset.variables.keys())[:10]
+                    )
                     raise KeyError(
-                        f"Variable {var_name} not found in {filename}"
+                        f"Variable {var_name} (or alternatives {alt_names}) "
+                        f"not found in {filename}. "
+                        f"Available variables (first 10): {available_vars}..."
                     )
 
         return data
@@ -124,8 +227,10 @@ class IceDataPreparer:
                 float(data['mask'][i]),
                 float(data['lat'][i]),
                 float(data['aice'][i]),
+                float(data['sst'][i]),
                 self.clean_data,
-                self.pole
+                self.pole,
+                self.min_ice
             ):
                 selected_indices.append(i)
                 if len(selected_indices) >= max_patterns:
@@ -139,24 +244,33 @@ class IceDataPreparer:
                 "No valid data points found with current criteria"
             )
 
-        # Create pattern matrix (C++ order: tair, tsfc, sst, sss, hs, hi, sice)
-        patterns = np.zeros((n_patterns, 7), dtype=np.float32)
+        # Create pattern matrix with dynamic number of features
+        patterns = np.zeros((n_patterns, self.input_size), dtype=np.float32)
         targets = np.zeros(n_patterns, dtype=np.float32)
         lons = np.zeros(n_patterns, dtype=np.float32)
         lats = np.zeros(n_patterns, dtype=np.float32)
 
         for cnt, idx in enumerate(selected_indices):
-            # Input features (same order as C++ code)
-            patterns[cnt, 0] = data['tair'][idx]  # Air temperature
-            patterns[cnt, 1] = data['tsfc'][idx]  # Surface temperature
-            patterns[cnt, 2] = data['sst'][idx]   # Sea surface temperature
-            patterns[cnt, 3] = data['sss'][idx]   # Sea surface salinity
-            patterns[cnt, 4] = data['hs'][idx]    # Snow thickness
-            patterns[cnt, 5] = data['hi'][idx]    # Ice thickness
-            patterns[cnt, 6] = data['sice'][idx]  # Ice salinity
+            # Fill input features dynamically based on selected_features
+            for i, feature_name in enumerate(self.selected_features):
+                if feature_name in data:
+                    patterns[cnt, i] = data[feature_name][idx]
+                else:
+                    # Fill with default value if feature is missing
+                    print(f"Warning: Feature {feature_name} not found, using 0.0")
+                    patterns[cnt, i] = 0.0
 
             # Target (ice concentration)
             targets[cnt] = data['aice'][idx]
+
+            # Apply synthetic data transformation if enabled
+            if self.use_synthetic:
+                # Simple rule: if SST < -1.4°C, set ice concentration to 0.9
+                sst_val = patterns[cnt, 0]  # Assume first feature is SST
+                if sst_val < -1.4:
+                    targets[cnt] = 0.9
+                else:
+                    targets[cnt] = 0.0  # Open water for warmer SST
 
             # Geolocation
             lons[cnt] = data['lon'][idx]
@@ -182,15 +296,27 @@ class IceDataPreparer:
         std = np.where(std > 1e-6, std, 1.0)
 
         print("Normalization statistics:")
-        feature_names = ['tair', 'tsfc', 'sst', 'sss', 'hs', 'hi', 'sice']
-        for i, name in enumerate(feature_names):
-            print(f"  {name}: mean={mean[i]:.3f}, std={std[i]:.3f}")
+        for i, name in enumerate(self.selected_features):
+            if i < len(mean):
+                print(f"  {name}: mean={mean[i]:.3f}, std={std[i]:.3f}")
 
         return mean, std
 
+    def thin_patterns(self, patterns, targets, lons, lats, fraction):
+        """
+        Randomly thin the dataset to a given fraction.
+        """
+        if fraction < 1.0:
+            n = len(targets)
+            n_thin = int(n * fraction)
+            idx = np.random.choice(n, n_thin, replace=False)
+            return patterns[idx], targets[idx], lons[idx], lats[idx]
+        return patterns, targets, lons, lats
+
     def prepare_training_data(self, filename: str,
                               max_patterns: int = 400000,
-                              output_file: Optional[str] = None) -> Dict:
+                              output_file: Optional[str] = None,
+                              thin_fraction: float = 1.0) -> Dict:
         """
         Complete data preparation pipeline.
 
@@ -198,6 +324,7 @@ class IceDataPreparer:
             filename: Input NetCDF file path
             max_patterns: Maximum number of training patterns
             output_file: Optional output file to save processed data
+            thin_fraction: Fraction of data to keep (default 1.0, no thinning)
 
         Returns:
             Dictionary with processed data
@@ -209,6 +336,10 @@ class IceDataPreparer:
         patterns, targets, lons, lats = self.filter_data(
             raw_data, max_patterns
         )
+
+        # Thin the dataset if requested
+        patterns, targets, lons, lats = self.thin_patterns(
+            patterns, targets, lons, lats, thin_fraction)
 
         # Compute normalization statistics
         input_mean, input_std = self.compute_normalization_stats(patterns)
@@ -225,9 +356,7 @@ class IceDataPreparer:
                 'pole': self.pole,
                 'clean_data': self.clean_data,
                 'n_patterns': len(patterns),
-                'input_features': [
-                    'tair', 'tsfc', 'sst', 'sss', 'hs', 'hi', 'sice'
-                ],
+                'input_features': self.selected_features,
                 'target': 'aice'
             }
         }

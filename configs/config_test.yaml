@@ -1,0 +1,47 @@
+model:
+  input_size: 17  # 17 stable ice physics features: SST, SSS, Tair, Tsfc, hi, hs, sice, strocnx, strocny, strairx, strairy, fhocn, qref, fsens, flat, flwdn, fswdn (removed ice temp vars due to NaN issues)
+  hidden_size: 64
+  hidden_layers: 3
+  output_size: 1
+
+domain:
+  pole: "both"
+  clean_data: true       # Apply strict quality filters including SST ≤ 5°C
+
+data:
+  #data_path: "/home/gvernier/data/gdas.agg_ice.t00z.inst.f009.nc"
+  data_path: "/home/gvernier/data/gdas.ice.t00z.inst.f009.nc"
+  validation_split: 0.1
+  num_workers: 0
+  num_samples: 1000000
+  thin_fraction: 0.01
+
+training:
+  epochs: 1000
+  batch_size: 1000
+  optimizer:
+    type: "adam"
+    learning_rate: 0.0001
+    weight_decay: 0.0001
+  scheduler: null  # Disabled - using constant learning rate
+  loss_function: "mse"
+  early_stopping_patience: 50
+  log_interval: 2
+  save_interval: 20
+  # Jacobian convergence tracking (for data assimilation)
+  jacobian_freq: 1      # Compute Jacobian metrics every N epochs
+  track_jacobian: true  # Enable/disable Jacobian tracking
+  # Advanced stopping criteria
+  convergence_tolerance: 0.0000000000000001    # Relative loss change threshold
+  convergence_window: 5          # Number of epochs to check convergence
+  min_epochs: 3000                 # Minimum epochs before early stopping
+  # Jacobian-based stopping criteria
+  use_jacobian_stopping: true         # Enable Jacobian convergence stopping
+  jacobian_convergence_tolerance: 0.0000000000001  # Relative change in Jacobian metrics
+  jacobian_convergence_window: 5      # Number of Jacobian evaluations for convergence
+  min_epochs_jacobian: 100000             # Minimum epochs before Jacobian stopping
+
+output:
+  model_dir: "models/"
+
+use_cuda: true

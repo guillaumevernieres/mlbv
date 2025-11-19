@@ -16,25 +16,41 @@ class IceNet(nn.Module):
     """
 
     def __init__(self, input_size: int, hidden_size: int, output_size: int,
-                 kernel_size: int = 1, stride: int = 1):
+                 hidden_layers: int = 2, kernel_size: int = 1,
+                 stride: int = 1):
         """
         Initialize the IceNet model.
 
         Args:
             input_size: Number of input features
-            hidden_size: Number of hidden units in the first layer
+            hidden_size: Number of hidden units per layer
             output_size: Number of output features
+            hidden_layers: Number of hidden layers (default: 2)
             kernel_size: Kernel size (currently unused, for compatibility)
             stride: Stride (currently unused, for compatibility)
         """
         super(IceNet, self).__init__()
 
-        print(f"Starting IceNet constructor: {input_size} {output_size} "
-              f"{hidden_size}")
+        print(f"Starting IceNet constructor: {input_size} -> "
+              f"{hidden_layers}x{hidden_size} -> {output_size}")
 
-        # Define the layers
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, output_size)
+        # Build dynamic network based on hidden_layers
+        layers = []
+
+        # First layer: input -> hidden
+        layers.append(nn.Linear(input_size, hidden_size))
+        layers.append(nn.ReLU())  # Fixed: Added ReLU activation
+
+        # Additional hidden layers: hidden -> hidden
+        for _ in range(hidden_layers - 1):
+            layers.append(nn.Linear(hidden_size, hidden_size))
+            layers.append(nn.ReLU())
+
+        # Final layer: hidden -> output with sigmoid activation
+        layers.append(nn.Linear(hidden_size, output_size))
+        layers.append(nn.Sigmoid())  # Bound output to [0, 1]
+
+        self.network = nn.Sequential(*layers)
 
         # Register mean and std as buffers (non-trainable parameters)
         self.register_buffer('input_mean', torch.full((input_size,), 0.0))
@@ -43,6 +59,10 @@ class IceNet(nn.Module):
         # Type annotations for buffers (for mypy)
         self.input_mean: torch.Tensor
         self.input_std: torch.Tensor
+
+        # Compute total number of parameters (degrees of freedom)
+        total_params = sum(p.numel() for p in self.parameters())
+        print(f"Total degrees of freedom (parameters): {total_params}")
 
         print("End IceNet constructor")
 
@@ -83,21 +103,30 @@ class IceNet(nn.Module):
         """
         file_path = Path(model_filename)
         path = file_path.parent
-        filename = file_path.name
 
-        # Load 1st and 2nd moments
-        norm_path = path / f"normalization.{filename}"
-        moments = torch.load(norm_path)
-        self.input_mean.data = moments[0]
-        self.input_std.data = moments[1]
-        print(f"Loaded normalization from: {norm_path}")
+        # Try the new single normalization file first
+        norm_path = path / "normalization.pt"
+        if norm_path.exists():
+            moments = torch.load(norm_path)
+            self.input_mean.data = moments[0]
+            self.input_std.data = moments[1]
+            print(f"Loaded normalization from: {norm_path}")
+        else:
+            # Fallback to old per-model normalization files
+            filename = file_path.name
+            old_norm_path = path / f"normalization.{filename}"
+            moments = torch.load(old_norm_path)
+            self.input_mean.data = moments[0]
+            self.input_std.data = moments[1]
+            print(f"Loaded normalization from: {old_norm_path}")
 
     def init_weights(self) -> None:
         """
         Initialize weights using Xavier normal initialization.
         """
-        init.xavier_normal_(self.fc1.weight)
-        init.xavier_normal_(self.fc2.weight)
+        for module in self.network:
+            if isinstance(module, nn.Linear):
+                init.xavier_normal_(module.weight)
         print("Initialized weights with Xavier normal distribution")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -113,36 +142,49 @@ class IceNet(nn.Module):
         # Normalize the input
         x = (x - self.input_mean) / self.input_std
 
-        # Pass through layers
-        x = self.fc1(x)
-        x = torch.sigmoid(self.fc2(x))
+        # Forward through dynamic network
+        x = self.network(x)
 
         return x
 
     def jac(self, x: torch.Tensor) -> torch.Tensor:
         """
         Compute the Jacobian (dout/dx) using automatic differentiation.
+        Updated to properly handle sigmoid activation and multi-output cases.
 
         Args:
             x: Input tensor
 
         Returns:
-            Jacobian matrix
+            Jacobian matrix [batch_size, output_size, input_size]
         """
         # Create input tensor that requires gradients
         x_input = x.clone().detach().requires_grad_(True)
 
         # Forward pass
         y = self.forward(x_input)
+        output_size = y.shape[1]
 
-        # Compute gradients
-        y.backward(torch.ones_like(y))
+        # Compute Jacobian for each output
+        jacobians = []
+        for i in range(output_size):
+            # Zero gradients from previous computation
+            if x_input.grad is not None:
+                x_input.grad.zero_()
 
-        # Return gradients (ensure it's not None)
-        if x_input.grad is None:
-            raise RuntimeError("Gradients not computed properly")
+            # Backward pass for output i
+            grad_outputs = torch.zeros_like(y)
+            grad_outputs[:, i] = 1.0
+            y.backward(grad_outputs, retain_graph=True)
 
-        return x_input.grad
+            # Store gradients for this output
+            if x_input.grad is None:
+                raise RuntimeError("Gradients not computed properly")
+            jacobians.append(x_input.grad.clone())
+
+        # Stack jacobians: [batch_size, output_size, input_size]
+        jacobian_matrix = torch.stack(jacobians, dim=1)
+        return jacobian_matrix
 
     def jac_norm(self, input_tensor: torch.Tensor) -> torch.Tensor:
         """
@@ -186,20 +228,22 @@ class IceNet(nn.Module):
 
 
 def create_icenet(
-        input_size: int, hidden_size: int, output_size: int
+        input_size: int, hidden_size: int, output_size: int,
+        hidden_layers: int = 2
 ) -> IceNet:
     """
     Factory function to create and initialize an IceNet model.
 
     Args:
         input_size: Number of input features
-        hidden_size: Number of hidden units
+        hidden_size: Number of hidden units per layer
         output_size: Number of output features
+        hidden_layers: Number of hidden layers
 
     Returns:
         Initialized IceNet model
     """
-    model = IceNet(input_size, hidden_size, output_size)
+    model = IceNet(input_size, hidden_size, output_size, hidden_layers)
     model.init_weights()
     return model
 

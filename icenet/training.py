@@ -67,10 +67,12 @@ class IceNetTrainer:
                 print(f"Distributed training: {world_size} processes")
 
         # Initialize model
+        hidden_layers = config['model'].get('hidden_layers', 2)
         self.model: Union[IceNet, DDP] = create_icenet(
             input_size=config['model']['input_size'],
             hidden_size=config['model']['hidden_size'],
-            output_size=config['model']['output_size']
+            output_size=config['model']['output_size'],
+            hidden_layers=hidden_layers
         ).to(self.device)
 
         # Wrap model for distributed training
@@ -91,7 +93,11 @@ class IceNetTrainer:
         self.history: Dict[str, List[float]] = {
             'train_loss': [],
             'val_loss': [],
-            'learning_rate': []
+            'learning_rate': [],
+            'jacobian_frobenius_norm': [],
+            'jacobian_spectral_norm': [],
+            'jacobian_stability': [],
+            'jacobian_metrics_history': []  # Store full metrics dictionaries
         }
 
     def _create_optimizer(self) -> optim.Optimizer:
@@ -255,6 +261,21 @@ class IceNetTrainer:
             assert hasattr(icenet_model, 'init_norm')
             icenet_model.init_norm(input_mean, input_std)
 
+        # Save normalization once (not per checkpoint)
+        if self.rank == 0:
+            output_dir = Path(self.config['output']['model_dir'])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            norm_path = output_dir / "normalization.pt"
+
+            if hasattr(self.model, 'module'):  # DDP wrapped model
+                ddp_model = cast(DDP, self.model)
+                ddp_model.module.save_norm(str(norm_path))
+            else:
+                icenet_model = cast(IceNet, self.model)
+                icenet_model.save_norm(str(norm_path))
+
+            print(f"Saved normalization parameters to: {norm_path}")
+
         # Create dataset
         dataset = TensorDataset(inputs, targets)
 
@@ -321,6 +342,10 @@ class IceNetTrainer:
             # Forward pass
             outputs = self.model(inputs)
 
+            # Fix shape mismatch: squeeze model output to match target shape
+            if outputs.dim() > targets.dim():
+                outputs = outputs.squeeze()
+
             # Compute loss
             loss = self.criterion(outputs, targets)
 
@@ -333,13 +358,156 @@ class IceNetTrainer:
             total_loss += loss.item()
             num_batches += 1
 
-            # Print progress
+            # Print progress that overwrites itself - just show mean batch loss
             log_interval = self.config['training'].get('log_interval', 100)
             if batch_idx % log_interval == 0:
-                print(f'Batch {batch_idx}/{len(train_loader)}, '
-                      f'Loss: {loss.item():.6f}')
+                mean_loss = total_loss / (num_batches)
+                # Use \r to overwrite the line and end='' to stay on same line
+                print(f'\rBatch {batch_idx}/{len(train_loader)}, '
+                      f'Mean Loss: {mean_loss:.6f}', end='', flush=True)
 
+        # Print newline at end of epoch to move to next line
+        print()  # This ensures we move to the next line after epoch completes
         return total_loss / num_batches
+
+    def _get_prediction_sample(self, val_loader: DataLoader,
+                              max_samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Get a sample of predictions vs targets for plotting.
+
+        Args:
+            val_loader: Validation data loader
+            max_samples: Maximum number of samples to collect
+
+        Returns:
+            Tuple of (predictions, targets) as numpy arrays
+        """
+        self.model.eval()
+        predictions = []
+        targets = []
+
+        with torch.no_grad():
+            for inputs, batch_targets in val_loader:
+                if len(predictions) >= max_samples:
+                    break
+
+                inputs = inputs.to(self.device)
+                batch_targets = batch_targets.to(self.device)
+
+                outputs = self.model(inputs)
+
+                # Fix shape mismatch: squeeze model output to match target shape
+                if outputs.dim() > batch_targets.dim():
+                    outputs = outputs.squeeze()
+
+                predictions.extend(outputs.cpu().numpy().flatten())
+                targets.extend(batch_targets.cpu().numpy().flatten())
+
+        return np.array(predictions[:max_samples]), np.array(targets[:max_samples])
+
+    def compute_jacobian_metrics(self, val_loader: DataLoader
+                                 ) -> Dict[str, float]:
+        """
+        Compute Jacobian convergence metrics on a sample of validation data.
+
+        For data assimilation, the Jacobian (∂output/∂input) is crucial as it
+        represents the sensitivity of ice concentration to input variables.
+
+        Args:
+            val_loader: Validation data loader
+
+        Returns:
+            Dictionary with Jacobian metrics:
+            - frobenius_norm: Frobenius norm of the Jacobian
+            - spectral_norm: Largest singular value of the Jacobian
+            - stability: Measure of Jacobian stability/conditioning
+        """
+        self.model.eval()
+
+        # Sample a subset of validation data for Jacobian computation
+        sample_size = min(100, len(val_loader.dataset))  # Limit for efficiency
+        jacobians = []
+
+        with torch.enable_grad():  # Need gradients for Jacobian
+            for i, (inputs, _) in enumerate(val_loader):
+                if i * val_loader.batch_size >= sample_size:
+                    break
+
+                inputs = inputs.to(self.device)
+                batch_size = inputs.shape[0]
+
+                # Compute Jacobian for each sample in batch
+                max_samples = min(batch_size,
+                                  sample_size - i * val_loader.batch_size)
+                for j in range(max_samples):
+                    sample_input = inputs[j:j+1].requires_grad_(True)
+
+                    # Forward pass
+                    output = self.model(sample_input)
+
+                    # Compute gradients (Jacobian row)
+                    grad_outputs = torch.ones_like(output)
+                    jacobian_row = torch.autograd.grad(
+                        outputs=output,
+                        inputs=sample_input,
+                        grad_outputs=grad_outputs,
+                        create_graph=False,
+                        retain_graph=False
+                    )[0]
+
+                    jacobians.append(
+                        jacobian_row.detach().cpu().numpy().flatten())
+
+        if not jacobians:
+            return {
+                'frobenius_norm': 0.0,
+                'spectral_norm': 0.0,
+                'stability': 0.0
+            }
+
+        # Stack all Jacobian rows into matrix
+        jacobian_matrix = np.vstack(jacobians)
+
+        # Compute different meaningful metrics for better visualization
+        # 1. Frobenius norm: overall magnitude of all gradients
+        frobenius_norm = np.linalg.norm(jacobian_matrix, 'fro')
+
+        # 2. Mean absolute gradient: average sensitivity across features
+        mean_abs_gradient = np.mean(np.abs(jacobian_matrix))
+
+        # 3. Compute SVD for spectral norm and stability
+        try:
+            U, s, Vt = np.linalg.svd(jacobian_matrix, full_matrices=False)
+            # Use actual spectral norm (largest singular value)
+            spectral_norm = s[0] if len(s) > 0 else 0.0
+
+            # Stability metric: ratio of largest to smallest singular value
+            stability = (s[0] / s[-1] if len(s) > 0 and s[-1] > 1e-12
+                         else 1e6)
+
+        except np.linalg.LinAlgError:
+            spectral_norm = 0.0
+            stability = 1e6
+
+        # Additional metrics for enhanced visualization
+        max_gradient = np.max(np.abs(jacobian_matrix)) if jacobian_matrix.size > 0 else 0.0
+        gradient_std = np.std(jacobian_matrix) if jacobian_matrix.size > 0 else 0.0
+
+        # Feature-wise sensitivity (most significant jacobian per feature)
+        feature_sensitivity = np.mean(np.abs(jacobian_matrix), axis=0) if jacobian_matrix.size > 0 else np.array([])
+        most_sensitive_feature = np.argmax(feature_sensitivity) if len(feature_sensitivity) > 0 else 0
+        max_feature_sensitivity = np.max(feature_sensitivity) if len(feature_sensitivity) > 0 else 0.0
+
+        return {
+            'frobenius_norm': float(frobenius_norm),
+            'spectral_norm': float(mean_abs_gradient),
+            'stability': float(stability),
+            'max_gradient': float(max_gradient),
+            'gradient_std': float(gradient_std),
+            'feature_sensitivity': feature_sensitivity,
+            'most_sensitive_feature': int(most_sensitive_feature),
+            'max_feature_sensitivity': float(max_feature_sensitivity)
+        }
 
     def validate(self, val_loader: DataLoader) -> float:
         """
@@ -361,6 +529,11 @@ class IceNetTrainer:
                 targets = targets.to(self.device)
 
                 outputs = self.model(inputs)
+
+                # Fix shape mismatch: squeeze model output to match target shape
+                if outputs.dim() > targets.dim():
+                    outputs = outputs.squeeze()
+
                 loss = self.criterion(outputs, targets)
 
                 total_loss += loss.item()
@@ -383,6 +556,26 @@ class IceNetTrainer:
         patience_counter = 0
         patience = self.config['training'].get('early_stopping_patience', 10)
 
+        # Convergence tracking
+        convergence_tolerance = self.config['training'].get(
+            'convergence_tolerance', 1e-6)
+        convergence_window = self.config['training'].get(
+            'convergence_window', 5)
+        min_epochs = self.config['training'].get('min_epochs', 10)
+        recent_losses = []
+
+        # Jacobian convergence tracking
+        jacobian_convergence_tolerance = self.config['training'].get(
+            'jacobian_convergence_tolerance', 1e-4)
+        jacobian_convergence_window = self.config['training'].get(
+            'jacobian_convergence_window', 5)
+        min_epochs_jacobian = self.config['training'].get(
+            'min_epochs_jacobian', 20)
+        use_jacobian_stopping = self.config['training'].get(
+            'use_jacobian_stopping', True)
+        recent_jacobian_norms = []
+        recent_jacobian_stability = []
+
         for epoch in range(self.config['training']['epochs']):
             epoch_start = time.time()
 
@@ -395,6 +588,57 @@ class IceNetTrainer:
             # Update scheduler
             self.scheduler.step()
 
+            # Compute Jacobian metrics (every few epochs to avoid overhead)
+            track_jacobian = self.config['training'].get(
+                'track_jacobian', True)
+            jacobian_freq = self.config['training'].get('jacobian_freq', 5)
+
+            if track_jacobian and (epoch + 1) % jacobian_freq == 0:
+                print("\rComputing Jacobian metrics...", end='', flush=True)
+                jacobian_metrics = self.compute_jacobian_metrics(val_loader)
+
+                # Store both individual metrics and full dictionary
+                self.history['jacobian_frobenius_norm'].append(
+                    jacobian_metrics['frobenius_norm'])
+                self.history['jacobian_spectral_norm'].append(
+                    jacobian_metrics['spectral_norm'])
+                self.history['jacobian_stability'].append(
+                    jacobian_metrics['stability'])
+                self.history['jacobian_metrics_history'].append(jacobian_metrics)
+
+                # Track recent Jacobian metrics for convergence
+                recent_jacobian_norms.append(
+                    jacobian_metrics['frobenius_norm'])
+                recent_jacobian_stability.append(
+                    jacobian_metrics['stability'])
+
+                # Keep only recent values for convergence check
+                if len(recent_jacobian_norms) > jacobian_convergence_window:
+                    recent_jacobian_norms.pop(0)
+                window_limit = jacobian_convergence_window
+                if len(recent_jacobian_stability) > window_limit:
+                    recent_jacobian_stability.pop(0)
+
+                # Clear the "Computing..." line and show compact Jacobian metrics
+                print(f'\rJac: F={jacobian_metrics["frobenius_norm"]:.3f}, '
+                      f'S={jacobian_metrics["spectral_norm"]:.3f}, '
+                      f'Stab={jacobian_metrics["stability"]:.1e}', end='  ')  # Extra space after
+            else:
+                # Pad with previous values to keep arrays aligned
+                if track_jacobian:
+                    if self.history['jacobian_frobenius_norm']:
+                        self.history['jacobian_frobenius_norm'].append(
+                            self.history['jacobian_frobenius_norm'][-1])
+                        self.history['jacobian_spectral_norm'].append(
+                            self.history['jacobian_spectral_norm'][-1])
+                        self.history['jacobian_stability'].append(
+                            self.history['jacobian_stability'][-1])
+                    else:
+                        # First epoch, initialize with zeros
+                        self.history['jacobian_frobenius_norm'].append(0.0)
+                        self.history['jacobian_spectral_norm'].append(0.0)
+                        self.history['jacobian_stability'].append(0.0)
+
             # Record history
             self.history['train_loss'].append(train_loss)
             self.history['val_loss'].append(val_loss)
@@ -402,15 +646,14 @@ class IceNetTrainer:
                 self.optimizer.param_groups[0]['lr']
             )
 
+            # Track recent losses for convergence detection
+            recent_losses.append(val_loss)
+            if len(recent_losses) > convergence_window:
+                recent_losses.pop(0)
+
             epoch_time = time.time() - epoch_start
 
-            print(f'Epoch {epoch+1}/{self.config["training"]["epochs"]} '
-                  f'({epoch_time:.2f}s) - '
-                  f'Train Loss: {train_loss:.6f}, '
-                  f'Val Loss: {val_loss:.6f}, '
-                  f'LR: {self.optimizer.param_groups[0]["lr"]:.2e}')
-
-            # Early stopping
+            # Early stopping and convergence checks
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 patience_counter = 0
@@ -418,14 +661,106 @@ class IceNetTrainer:
             else:
                 patience_counter += 1
 
-            if patience_counter >= patience:
-                print(f'Early stopping after {epoch+1} epochs')
+            # Check for convergence (loss plateau)
+            converged = False
+            jacobian_converged = False
+
+            if (epoch + 1 >= min_epochs and
+                    len(recent_losses) == convergence_window):
+
+                # Check if loss has plateaued (relative change < tolerance)
+                max_loss = max(recent_losses)
+                min_loss = min(recent_losses)
+                if max_loss > 0:
+                    relative_change = (max_loss - min_loss) / max_loss
+                    if relative_change < convergence_tolerance:
+                        converged = True
+                        print(f'Loss convergence detected: loss plateau '
+                              f'(relative change: {relative_change:.2e} < '
+                              f'{convergence_tolerance:.2e})')
+
+            # Check for Jacobian convergence
+            if (use_jacobian_stopping and track_jacobian and
+                    (epoch + 1) >= min_epochs_jacobian and
+                    len(recent_jacobian_norms) >= jacobian_convergence_window):
+
+                # Check Jacobian Frobenius norm convergence
+                max_jac_norm = max(recent_jacobian_norms)
+                min_jac_norm = min(recent_jacobian_norms)
+                if max_jac_norm > 0:
+                    jac_relative_change = ((max_jac_norm - min_jac_norm) /
+                                           max_jac_norm)
+                    tolerance = jacobian_convergence_tolerance
+                    if jac_relative_change < tolerance:
+                        jacobian_converged = True
+                        print(f'Jacobian convergence detected: '
+                              f'Frobenius norm plateau '
+                              f'(relative change: '
+                              f'{jac_relative_change:.2e} < {tolerance:.2e})')
+
+                # Also check stability convergence (condition number)
+                if (recent_jacobian_stability and
+                        len(recent_jacobian_stability) >=
+                        jacobian_convergence_window):
+                    # Use relative change in log space for large values
+                    log_stability = [np.log10(max(s, 1e-12))
+                                     for s in recent_jacobian_stability]
+                    max_log_stab = max(log_stability)
+                    min_log_stab = min(log_stability)
+                    if max_log_stab > min_log_stab:
+                        stab_change = ((max_log_stab - min_log_stab) /
+                                       max(abs(max_log_stab), 1e-12))
+                        tolerance = jacobian_convergence_tolerance
+                        if stab_change < tolerance:
+                            print(f'Jacobian stability convergence detected: '
+                                  f'condition number plateau '
+                                  f'(log relative change: '
+                                  f'{stab_change:.2e} < {tolerance:.2e})')
+                            jacobian_converged = True
+
+            # Compact epoch logging that overwrites itself
+            print(f'\rEpoch {epoch+1}/{self.config["training"]["epochs"]} '
+                  f'({epoch_time:.1f}s) - '
+                  f'Train: {train_loss:.6f}, '
+                  f'Val: {val_loss:.6f}, '
+                  f'LR: {self.optimizer.param_groups[0]["lr"]:.1e}',
+                  end='', flush=True)
+
+            # Stop training based on different criteria
+            if converged:
+                print(f'\nTraining converged after {epoch+1} epochs')
+                break
+            elif jacobian_converged:
+                print(f'\nTraining stopped due to Jacobian convergence '
+                      f'after {epoch+1} epochs')
+                break
+            elif patience_counter >= patience:
+                print(f'\nEarly stopping after {epoch+1} epochs '
+                      f'(no improvement for {patience} epochs)')
                 break
 
-            # Save periodic checkpoint
+            # Add newline every 10 epochs for readability
+            if (epoch + 1) % 10 == 0:
+                print()  # Move to next line
+
+            # Save periodic checkpoint and update plots
             save_interval = self.config['training'].get('save_interval', 10)
             if (epoch + 1) % save_interval == 0:
                 self.save_checkpoint(f'checkpoint_epoch_{epoch+1}.pt')
+
+                # Get a sample of predictions vs targets for plotting
+                sample_predictions, sample_targets = self._get_prediction_sample(val_loader)
+
+                # Update training plots at the same interval
+                self.plot_training_history(
+                    output_dir=self.config['output']['model_dir'],
+                    train_loss=self.history['train_loss'],
+                    val_loss=self.history['val_loss'],
+                    learning_rate=self.history['learning_rate'],
+                    jacobian_metrics_history=self.history['jacobian_metrics_history'],
+                    predictions=sample_predictions,
+                    targets=sample_targets
+                )
 
         total_time = time.time() - start_time
         print(f'Training completed in {total_time:.2f} seconds')
@@ -456,17 +791,6 @@ class IceNetTrainer:
 
         torch.save(checkpoint, output_dir / filename)
 
-        # Save normalization stats
-        if hasattr(self.model, 'module'):  # DDP wrapped model
-            # Save normalization stats for distributed model
-            norm_path = str(output_dir / filename)
-            ddp_model = cast(DDP, self.model)
-            ddp_model.module.save_norm(norm_path)
-        else:
-            norm_path = str(output_dir / filename)
-            icenet_model = cast(IceNet, self.model)
-            icenet_model.save_norm(norm_path)
-
         print(f'Saved checkpoint: {output_dir / filename}')
 
     def save_model(self, model_path: str) -> None:
@@ -483,65 +807,189 @@ class IceNetTrainer:
 
         torch.save(model_state, model_path)
 
-        # Save normalization stats with same base name
-        base_path = str(model_path).rsplit('.', 1)[0]
-        if hasattr(self.model, 'module'):  # DDP wrapped model
-            ddp_model = cast(DDP, self.model)
-            ddp_model.module.save_norm(base_path)
-        else:
-            icenet_model = cast(IceNet, self.model)
-            icenet_model.save_norm(base_path)
-
         print(f'Saved model: {model_path}')
 
-    def plot_training_history(self) -> None:
-        """Plot training history."""
-        output_dir = Path(self.config['output']['model_dir'])
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def plot_training_history(self, output_dir, train_loss, val_loss,
+                             learning_rate, jacobian_metrics_history=None,
+                             predictions=None, targets=None):
+        """
+        Plot comprehensive training history with enhanced Jacobian diagnostics.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from pathlib import Path
 
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        fig, axes = plt.subplots(2, 4, figsize=(24, 12))
 
-        # Loss plot
-        axes[0, 0].plot(self.history['train_loss'], label='Train Loss')
-        axes[0, 0].plot(self.history['val_loss'], label='Val Loss')
+        # 1. Training and validation loss (top-left)
+        axes[0, 0].plot(train_loss, label='Training Loss', color='blue')
+        axes[0, 0].plot(val_loss, label='Validation Loss', color='red')
         axes[0, 0].set_xlabel('Epoch')
         axes[0, 0].set_ylabel('Loss')
         axes[0, 0].set_title('Training and Validation Loss')
         axes[0, 0].legend()
-        axes[0, 0].grid(True)
+        axes[0, 0].grid(True, alpha=0.3)
 
-        # Learning rate plot
-        axes[0, 1].plot(self.history['learning_rate'])
+        # 2. Learning rate (top-middle)
+        axes[0, 1].plot(learning_rate, color='green')
         axes[0, 1].set_xlabel('Epoch')
         axes[0, 1].set_ylabel('Learning Rate')
         axes[0, 1].set_title('Learning Rate Schedule')
-        axes[0, 1].grid(True)
+        axes[0, 1].grid(True, alpha=0.3)
         axes[0, 1].set_yscale('log')
 
-        # Loss plot (log scale)
-        axes[1, 0].semilogy(self.history['train_loss'], label='Train Loss')
-        axes[1, 0].semilogy(self.history['val_loss'], label='Val Loss')
-        axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Loss (log scale)')
-        axes[1, 0].set_title('Training and Validation Loss (Log Scale)')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True)
+        # Extract Jacobian metrics if available
+        if jacobian_metrics_history:
+            frobenius_norms = [m.get('frobenius_norm', 0) for m in jacobian_metrics_history]
+            spectral_norms = [m.get('spectral_norm', 0) for m in jacobian_metrics_history]
+            stability_vals = [m.get('stability', 0) for m in jacobian_metrics_history]
+            max_gradients = [m.get('max_gradient', 0) for m in jacobian_metrics_history]
+            gradient_stds = [m.get('gradient_std', 0) for m in jacobian_metrics_history]
+            max_sensitivities = [m.get('max_feature_sensitivity', 0) for m in jacobian_metrics_history]
+        else:
+            frobenius_norms = spectral_norms = stability_vals = []
+            max_gradients = gradient_stds = max_sensitivities = []
 
-        # Validation loss zoomed
-        if len(self.history['val_loss']) > 10:
-            axes[1, 1].plot(self.history['val_loss'][10:])
-            axes[1, 1].set_xlabel('Epoch')
-            axes[1, 1].set_ylabel('Validation Loss')
-            axes[1, 1].set_title('Validation Loss (After Epoch 10)')
-            axes[1, 1].grid(True)
+        # 3. Jacobian Frobenius norm (top-right)
+        if len(frobenius_norms) > 0:
+            axes[0, 2].plot(frobenius_norms, color='purple')
+            axes[0, 2].set_xlabel('Epoch')
+            axes[0, 2].set_ylabel('Frobenius Norm')
+            axes[0, 2].set_title('Jacobian Frobenius Norm')
+            axes[0, 2].grid(True, alpha=0.3)
+        else:
+            axes[0, 2].text(0.5, 0.5, 'No Jacobian Data', ha='center', va='center')
+            axes[0, 2].set_title('Jacobian Frobenius Norm')
+
+        # 4. Jacobian Spectral norm (top-far-right)
+        if len(spectral_norms) > 0:
+            axes[0, 3].plot(spectral_norms, color='orange')
+            axes[0, 3].set_xlabel('Epoch')
+            axes[0, 3].set_ylabel('Mean Abs Gradient')
+            axes[0, 3].set_title('Jacobian Mean Abs Gradient')
+            axes[0, 3].grid(True, alpha=0.3)
+        else:
+            axes[0, 3].text(0.5, 0.5, 'No Jacobian Data', ha='center', va='center')
+            axes[0, 3].set_title('Jacobian Mean Abs Gradient')
+
+        # 5. Maximum Gradient (bottom-left)
+        if len(max_gradients) > 0:
+            axes[1, 0].plot(max_gradients, color='red')
+            axes[1, 0].set_xlabel('Epoch')
+            axes[1, 0].set_ylabel('Max |Gradient|')
+            axes[1, 0].set_title('Maximum Jacobian Element')
+            axes[1, 0].grid(True, alpha=0.3)
+        else:
+            axes[1, 0].text(0.5, 0.5, 'No Jacobian Data', ha='center', va='center')
+            axes[1, 0].set_title('Maximum Jacobian Element')
+
+        # 6. Target vs Inference scatter (bottom-middle)
+        if predictions is not None and targets is not None:
+            valid_mask = ~(np.isnan(predictions) | np.isnan(targets))
+            if np.any(valid_mask):
+                pred_valid = predictions[valid_mask]
+                targ_valid = targets[valid_mask]
+
+                axes[1, 1].scatter(targ_valid, pred_valid, alpha=0.6, s=1)
+                min_val = min(np.min(targ_valid), np.min(pred_valid))
+                max_val = max(np.max(targ_valid), np.max(pred_valid))
+                axes[1, 1].plot([min_val, max_val], [min_val, max_val],
+                                'r--', alpha=0.8, label='Perfect Prediction')
+
+                rmse = np.sqrt(np.mean((pred_valid - targ_valid) ** 2))
+                bias = np.mean(pred_valid - targ_valid)
+                axes[1, 1].text(0.05, 0.95, f'RMSE: {rmse:.4f}\nBias: {bias:.4f}',
+                                transform=axes[1, 1].transAxes, verticalalignment='top',
+                                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+                axes[1, 1].set_xlabel('Target Ice Concentration')
+                axes[1, 1].set_ylabel('Predicted Ice Concentration')
+                axes[1, 1].set_title('Target vs Prediction')
+                axes[1, 1].legend()
+                axes[1, 1].grid(True, alpha=0.3)
+            else:
+                axes[1, 1].text(0.5, 0.5, 'No Valid Data', ha='center', va='center')
+                axes[1, 1].set_title('Target vs Prediction')
+        else:
+            axes[1, 1].text(0.5, 0.5, 'No Data', ha='center', va='center')
+            axes[1, 1].set_title('Target vs Prediction')
+
+        # 7. Most Sensitive Feature (bottom-middle-right)
+        if len(max_sensitivities) > 0:
+            axes[1, 2].plot(max_sensitivities, color='green')
+            axes[1, 2].set_xlabel('Epoch')
+            axes[1, 2].set_ylabel('Max Feature Sensitivity')
+            axes[1, 2].set_title('Most Significant Jacobian')
+            axes[1, 2].grid(True, alpha=0.3)
+        else:
+            axes[1, 2].text(0.5, 0.5, 'No Jacobian Data', ha='center', va='center')
+            axes[1, 2].set_title('Most Significant Jacobian')
+
+        # 8. Jacobian Stability (bottom-right)
+        if len(stability_vals) > 0:
+            axes[1, 3].semilogy(stability_vals, color='brown')
+            axes[1, 3].set_xlabel('Epoch')
+            axes[1, 3].set_ylabel('Condition Number')
+            axes[1, 3].set_title('Jacobian Stability')
+            axes[1, 3].grid(True, alpha=0.3)
+        else:
+            axes[1, 3].text(0.5, 0.5, 'No Jacobian Data', ha='center', va='center')
+            axes[1, 3].set_title('Jacobian Stability')
+
+        plt.suptitle('IceNet Training History', fontsize=16, fontweight='bold')
+        plt.tight_layout()
+
+        # Save plot
+        output_path = Path(output_dir) / 'training_history.png'
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"Training history saved to: {output_path}")
+        plt.close(fig)
+
+    def plot_convergence_diagnostics(self, train_loss, val_loss, predictions, targets, output_dir):
+        """
+        Plot training/validation loss and target vs inference with stats.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+        # Panel 1: Training loss
+        axes[0, 0].plot(train_loss, label='Train Loss')
+        axes[0, 0].set_title('Training Loss')
+        axes[0, 0].set_xlabel('Epoch')
+        axes[0, 0].set_ylabel('Loss')
+        axes[0, 0].legend()
+
+        # Panel 2: Validation loss
+        axes[0, 1].plot(val_loss, label='Validation Loss', color='orange')
+        axes[0, 1].set_title('Validation Loss')
+        axes[0, 1].set_xlabel('Epoch')
+        axes[0, 1].set_ylabel('Loss')
+        axes[0, 1].legend()
+
+        # Panel 3: Target vs Inference scatter
+        axes[1, 0].scatter(targets, predictions, s=2, alpha=0.5)
+        axes[1, 0].set_title('Target vs Inference')
+        axes[1, 0].set_xlabel('Target (Ground Truth)')
+        axes[1, 0].set_ylabel('Inference (Prediction)')
+        # Compute stats
+        rmse = np.sqrt(np.mean((predictions - targets) ** 2))
+        bias = np.mean(predictions - targets)
+        axes[1, 0].text(0.05, 0.95, f'RMSE: {rmse:.4f}\nBias: {bias:.4f}',
+                        transform=axes[1, 0].transAxes,
+                        fontsize=12, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
+
+        # Panel 4: Histogram of prediction errors
+        error = predictions - targets
+        axes[1, 1].hist(error, bins=50, color='gray', alpha=0.7)
+        axes[1, 1].set_title('Prediction Error Histogram')
+        axes[1, 1].set_xlabel('Prediction - Target')
+        axes[1, 1].set_ylabel('Count')
 
         plt.tight_layout()
-        plt.savefig(
-            output_dir / 'training_history.png',
-            dpi=300,
-            bbox_inches='tight'
-        )
-        plt.show()
+        fig.savefig(f'{output_dir}/convergence_diagnostics.png', dpi=150)
+        plt.close(fig)
+        print(f"Saved convergence diagnostics plot to: {output_dir}/convergence_diagnostics.png")
 
     def _compute_distributed_stats(
             self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -576,6 +1024,81 @@ class IceNetTrainer:
 
         return global_mean, global_std
 
+    def load_checkpoint(self, checkpoint_path: str) -> int:
+        """
+        Load model checkpoint and resume training from saved state.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file
+
+        Returns:
+            Starting epoch number for resumed training
+        """
+        if not Path(checkpoint_path).exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        if self.rank == 0:
+            print(f"Loading checkpoint from: {checkpoint_path}")
+
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+
+        # Load model state
+        if hasattr(self.model, 'module'):  # DDP wrapped model
+            ddp_model = cast(DDP, self.model)
+            ddp_model.module.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            icenet_model = cast(IceNet, self.model)
+            icenet_model.load_state_dict(checkpoint['model_state_dict'])
+
+        # Load optimizer state
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        # Load scheduler state
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        # Load training history
+        if 'history' in checkpoint:
+            self.history = checkpoint['history']
+            if self.rank == 0:
+                print(f"Resumed training history with {len(self.history['train_loss'])} epochs")
+
+        # Load configuration (for validation)
+        if 'config' in checkpoint:
+            saved_config = checkpoint['config']
+            # Verify model architecture matches
+            if (saved_config['model']['input_size'] != self.config['model']['input_size'] or
+                saved_config['model']['output_size'] != self.config['model']['output_size']):
+                raise ValueError("Model architecture mismatch between checkpoint and current config")
+
+        if self.rank == 0:
+            print("Checkpoint loaded successfully!")
+            print(f"Resuming from epoch {len(self.history['train_loss'])}")
+
+        return len(self.history['train_loss'])
+
+    def load_best_model(self, model_dir: str = None) -> None:
+        """
+        Load the best saved model for inference or resumed training.
+
+        Args:
+            model_dir: Directory containing the best_model.pt file
+        """
+        if model_dir is None:
+            model_dir = self.config['output']['model_dir']
+
+        best_model_path = Path(model_dir) / 'best_model.pt'
+
+        if not best_model_path.exists():
+            raise FileNotFoundError(f"Best model not found: {best_model_path}")
+
+        if self.rank == 0:
+            print(f"Loading best model from: {best_model_path}")
+
+        # Load checkpoint (best_model.pt contains full checkpoint)
+        self.load_checkpoint(str(best_model_path))
+
+        if self.rank == 0:
+            print("Best model loaded successfully!")
 
 def create_sample_data(config: Dict) -> str:
     """
@@ -651,7 +1174,7 @@ def create_default_config() -> Dict:
     """Create default training configuration."""
     return {
         "model": {
-            "input_size": 7,  # Updated to match C++ (7 features)
+            "input_size": 8,  # Updated: 7 features + latitude
             "hidden_size": 16,
             "output_size": 1  # Updated to match C++ (1 output: aice)
         },
@@ -681,7 +1204,16 @@ def create_default_config() -> Dict:
             "loss_function": "mse",
             "early_stopping_patience": 15,
             "log_interval": 50,
-            "save_interval": 20
+            "save_interval": 20,
+            "track_jacobian": True,
+            "jacobian_freq": 5,
+            "convergence_tolerance": 1e-6,
+            "convergence_window": 5,
+            "min_epochs": 10,
+            "use_jacobian_stopping": True,
+            "jacobian_convergence_tolerance": 1e-4,
+            "jacobian_convergence_window": 5,
+            "min_epochs_jacobian": 20
         },
         "output": {
             "model_dir": "models/"
@@ -774,7 +1306,8 @@ def cleanup_distributed() -> None:
 
 
 def train_distributed(rank: int, world_size: int, config: Dict[str, Any],
-                      data_path: str) -> None:
+                      data_path: str, restart_checkpoint: str = None,
+                      restart_from_best: bool = False) -> None:
     """
     Distributed training function.
 
@@ -783,6 +1316,8 @@ def train_distributed(rank: int, world_size: int, config: Dict[str, Any],
         world_size: Total number of processes
         config: Training configuration
         data_path: Path to training data
+        restart_checkpoint: Path to checkpoint file for restart
+        restart_from_best: Whether to restart from best_model.pt
     """
     # Setup distributed training
     setup_distributed(rank, world_size)
@@ -790,6 +1325,12 @@ def train_distributed(rank: int, world_size: int, config: Dict[str, Any],
     try:
         # Initialize trainer with distributed settings
         trainer = IceNetTrainer(config, rank=rank, world_size=world_size)
+
+        # Handle restart options
+        if restart_checkpoint:
+            trainer.load_checkpoint(restart_checkpoint)
+        elif restart_from_best:
+            trainer.load_best_model()
 
         # Load data
         train_loader, val_loader = trainer.load_data(data_path)
@@ -799,7 +1340,15 @@ def train_distributed(rank: int, world_size: int, config: Dict[str, Any],
 
         # Plot training history (only on rank 0)
         if rank == 0:
-            trainer.plot_training_history()
+            trainer.plot_training_history(
+                output_dir=trainer.config['output']['model_dir'],
+                train_loss=trainer.history['train_loss'],
+                val_loss=trainer.history['val_loss'],
+                learning_rate=trainer.history['learning_rate'],
+                jacobian_metrics_history=trainer.history['jacobian_metrics_history'],
+                predictions=None,
+                targets=None
+            )
             print("Distributed training completed successfully!")
 
     finally:
@@ -822,6 +1371,10 @@ def main() -> None:
                         help='Local rank for distributed training')
     parser.add_argument('--world-size', type=int, default=1,
                         help='Total processes for distributed training')
+    parser.add_argument('--restart-from-best', action='store_true',
+                        help='Restart training from best_model.pt checkpoint')
+    parser.add_argument('--restart-from-checkpoint', type=str, default=None,
+                        help='Restart training from specific checkpoint file')
 
     args = parser.parse_args()
 
@@ -870,11 +1423,18 @@ def main() -> None:
         print(f"Starting distributed training: rank {rank}/{world_size}")
         # Don't use mp.spawn for HPC - processes are already spawned
         train_distributed(
-            rank, world_size, config, config['data']['data_path']
+            rank, world_size, config, config['data']['data_path'],
+            args.restart_from_checkpoint, args.restart_from_best
         )
     else:
         # Initialize trainer
         trainer = IceNetTrainer(config)
+
+        # Handle restart options
+        if args.restart_from_checkpoint:
+            trainer.load_checkpoint(args.restart_from_checkpoint)
+        elif args.restart_from_best:
+            trainer.load_best_model()
 
         # Load data
         data_path = config['data']['data_path']
@@ -884,10 +1444,14 @@ def main() -> None:
         trainer.train(train_loader, val_loader)
 
         # Plot training history
-        trainer.plot_training_history()
+        trainer.plot_training_history(
+            output_dir=trainer.config['output']['model_dir'],
+            train_loss=trainer.history['train_loss'],
+            val_loss=trainer.history['val_loss'],
+            learning_rate=trainer.history['learning_rate'],
+            jacobian_metrics_history=trainer.history['jacobian_metrics_history'],
+            predictions=None,
+            targets=None
+        )
 
         print("Training completed successfully!")
-
-
-if __name__ == "__main__":
-    main()
