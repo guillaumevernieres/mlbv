@@ -5,3 +5,6 @@ matplotlib>=3.5.0
 PyYAML>=6.0
 netCDF4>=1.5.0
 pathlib2>=2.3.0  # For Python < 3.4 compatibility
+
+# Additional requirements for plot_inference_jacobian.py
+cartopy>=0.20.0  # For polar projections and geographic plotting

@@ -18,6 +18,15 @@ Usage:
         --model models/best_model.pt --antarctic-only
 """
 
+import sys
+import os
+from pathlib import Path
+
+# Add the parent directory to Python path to import icenet modules
+script_dir = Path(__file__).parent.absolute()
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root))
+
 import numpy as np
 import matplotlib.pyplot as plt
 import netCDF4 as nc
@@ -115,7 +124,7 @@ class IceNetInferencePlotter:
         print(f"Loading model from: {model_path}")
 
         # Load the checkpoint
-        checkpoint = torch.load(model_path, map_location=self.device)
+        checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
 
         # Debug checkpoint contents
         print(f"Checkpoint keys: {list(checkpoint.keys())}")
@@ -170,7 +179,7 @@ class IceNetInferencePlotter:
             loaded = False
             for norm_path in norm_paths:
                 if norm_path.exists():
-                    moments = torch.load(norm_path, map_location=self.device)
+                    moments = torch.load(norm_path, map_location=self.device, weights_only=False)
                     model.input_mean.data = moments[0]
                     model.input_std.data = moments[1]
                     print(f"✅ Loaded normalization from: {norm_path}")
@@ -486,8 +495,8 @@ class IceNetInferencePlotter:
             # Temperature: blue to red
             return plt.cm.RdBu_r
         elif "jacobian" in name.lower():
-            # Jacobian: centered around zero
-            return plt.cm.RdBu
+            # Jacobian: centered around zero, red for positive, blue for negative
+            return plt.cm.RdBu_r
         else:
             # Default
             return plt.cm.viridis
@@ -630,7 +639,7 @@ class IceNetInferencePlotter:
         print(f"Saved ice concentration plot: {ice_output_file}")
 
         # ===== FIGURE 2: JACOBIAN COMPONENTS =====
-        fig2 = plt.figure(figsize=(32, 24))
+        fig2 = plt.figure(figsize=(25, 18))
 
         # Helper function to create jacobian subplot
         def create_jacobian_subplot(subplot_idx, feature_idx, feature_name):
@@ -652,7 +661,7 @@ class IceNetInferencePlotter:
                 else:  # For very small values, use actual range
                     vmin, vmax = min_val, max_val
 
-                ax = plt.subplot(3, 6, subplot_idx, projection=projection)
+                ax = plt.subplot(3, 5, subplot_idx, projection=projection)
                 ax.set_extent(extent, crs=ccrs.PlateCarree())
                 ax.add_feature(cfeature.COASTLINE, alpha=0.5)
                 ax.add_feature(cfeature.LAND, alpha=0.3, color="lightgray")
@@ -681,7 +690,7 @@ class IceNetInferencePlotter:
                            label=f"dice/d{feature_name.lower()}")
             else:
                 # Show placeholder if feature not available
-                ax = plt.subplot(3, 6, subplot_idx, projection=projection)
+                ax = plt.subplot(3, 5, subplot_idx, projection=projection)
                 ax.set_extent(extent, crs=ccrs.PlateCarree())
                 ax.add_feature(cfeature.COASTLINE, alpha=0.5)
                 ax.add_feature(cfeature.LAND, alpha=0.3, color="lightgray")
@@ -698,15 +707,15 @@ class IceNetInferencePlotter:
                        bbox=dict(boxstyle='round', facecolor='wheat',
                                alpha=0.8))
 
-        # Create Jacobian subplots for all 17 features in a 3x6 layout
+        # Create Jacobian subplots for all 14 features in a 3x5 layout
         for i, feature_name in enumerate(self.feature_names):
             subplot_idx = i + 1  # subplot indices start from 1
             create_jacobian_subplot(subplot_idx, i, feature_name)
 
-        # Fill remaining slots with empty plots if needed (3x6 = 18 slots, we have 17 features)
-        if len(self.feature_names) < 18:
-            for empty_idx in range(len(self.feature_names) + 1, 19):
-                ax = plt.subplot(3, 6, empty_idx, projection=projection)
+        # Fill remaining slots with empty plots if needed (3x5 = 15 slots, we have 14 features)
+        if len(self.feature_names) < 15:
+            for empty_idx in range(len(self.feature_names) + 1, 16):
+                ax = plt.subplot(3, 5, empty_idx, projection=projection)
                 ax.set_extent(extent, crs=ccrs.PlateCarree())
                 ax.add_feature(cfeature.COASTLINE, alpha=0.5)
                 ax.add_feature(cfeature.LAND, alpha=0.3, color="lightgray")

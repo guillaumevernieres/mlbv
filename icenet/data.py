@@ -96,10 +96,7 @@ class IceDataPreparer:
             'strairx',    # Atm/ice stress (x)
             'strairy',    # Atm/ice stress (y)
             # Heat flux variables
-            'fhocn',      # Heat flux ice to ocean
             'qref',       # 2m reference specific humidity
-            'fsens',      # Sensible heat flux
-            'flat',       # Latent heat flux
             'flwdn',      # Down longwave flux
             'fswdn',      # Down solar flux
         ]
@@ -123,20 +120,20 @@ class IceDataPreparer:
             'tair': 'Tair_h',
             'frzmlt': 'frzmlt_h',
             # Ice temperature variables
-            'sitempbot': 'sitempbot_h',
-            'sitempsnic': 'sitempsnic_h',
-            'sitemptop': 'sitemptop_h',
+            #'sitempbot': 'sitempbot_h',
+            #'sitempsnic': 'sitempsnic_h',
+            #'sitemptop': 'sitemptop_h',
             # Stress variables
             'strocnx': 'strocnx_h',
             'strocny': 'strocny_h',
             'strairx': 'strairx_h',
             'strairy': 'strairy_h',
             # Heat flux variables
-            'fhocn': 'fhocn_h',
+            #'fhocn': 'fhocn_h',
             'qref': 'Qref_h',
-            'flwup': 'flwup_h',
-            'fsens': 'fsens_h',
-            'flat': 'flat_h',
+            #'flwup': 'flwup_h',
+            #'fsens': 'fsens_h',
+            #'flat': 'flat_h',
             'flwdn': 'flwdn_h',
             'fswdn': 'fswdn_h'
         }
@@ -257,7 +254,7 @@ class IceDataPreparer:
                     patterns[cnt, i] = data[feature_name][idx]
                 else:
                     # Fill with default value if feature is missing
-                    print(f"Warning: Feature {feature_name} not found, using 0.0")
+                    #print(f"Warning: Feature {feature_name} not found, using 0.0")
                     patterns[cnt, i] = 0.0
 
             # Target (ice concentration)

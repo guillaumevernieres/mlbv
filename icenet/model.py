@@ -46,9 +46,9 @@ class IceNet(nn.Module):
             layers.append(nn.Linear(hidden_size, hidden_size))
             layers.append(nn.ReLU())
 
-        # Final layer: hidden -> output with sigmoid activation
+        # Final layer: hidden -> output (no activation - linear output)
         layers.append(nn.Linear(hidden_size, output_size))
-        layers.append(nn.Sigmoid())  # Bound output to [0, 1]
+        # Removed sigmoid activation to allow unbounded output
 
         self.network = nn.Sequential(*layers)
 

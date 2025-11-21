@@ -1,5 +1,5 @@
 model:
-  input_size: 17  # 17 stable ice physics features: SST, SSS, Tair, Tsfc, hi, hs, sice, strocnx, strocny, strairx, strairy, fhocn, qref, fsens, flat, flwdn, fswdn (removed ice temp vars due to NaN issues)
+  input_size: 14  # 14 stable ice physics features: SST, SSS, Tair, Tsfc, hi, hs, sice, strocnx, strocny, strairx, strairy, qref, flwdn, fswdn (removed ice temp vars due to NaN issues, removed fhocn/fsens/flat - no longer available)
   hidden_size: 64
   hidden_layers: 3
   output_size: 1
@@ -9,15 +9,14 @@ domain:
   clean_data: true       # Apply strict quality filters including SST ≤ 5°C
 
 data:
-  #data_path: "/home/gvernier/data/gdas.agg_ice.t00z.inst.f009.nc"
-  data_path: "/home/gvernier/data/gdas.ice.t00z.inst.f009.nc"
+  data_path: "gdas.ice.t00z.inst.f009.nc"
   validation_split: 0.1
   num_workers: 0
   num_samples: 1000000
   thin_fraction: 0.01
 
 training:
-  epochs: 1000
+  epochs: 100000
   batch_size: 1000
   optimizer:
     type: "adam"
